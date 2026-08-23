@@ -1,0 +1,7 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Win32" />
+  </Configurations>
+  <Project Path="EnhancedRS3.vcxproj" Id="a0547027-96c5-4017-ba43-00ce52af9d6a" />
+  <Project Path="external/d3d8to9/d3d8to9.vcxproj" Id="7ee21ada-3b02-4cd6-a891-c2257a54b061" />
+</Solution>
