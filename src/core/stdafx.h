@@ -7,6 +7,7 @@
 #include <stdint.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <format>

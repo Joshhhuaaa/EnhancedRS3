@@ -33,6 +33,9 @@
     <ClCompile Include="src\features\alt_tab_crash.cpp">
       <Filter>features</Filter>
     </ClCompile>
+    <ClCompile Include="src\features\fov.cpp">
+      <Filter>features</Filter>
+    </ClCompile>
     <ClCompile Include="src\features\skip_intro.cpp">
       <Filter>features</Filter>
     </ClCompile>

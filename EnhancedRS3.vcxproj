@@ -61,6 +61,7 @@
     <ClCompile Include="src\core\script.cpp" />
     <ClCompile Include="src\dllmain.cpp" />
     <ClCompile Include="src\features\alt_tab_crash.cpp" />
+    <ClCompile Include="src\features\fov.cpp" />
     <ClCompile Include="src\features\skip_intro.cpp" />
   </ItemGroup>
   <ItemGroup Label="External">

@@ -36,5 +36,5 @@ FEATURE(Engine, SkipIntro)
     }
 
     shDisplayGameVideo = safetyhook::create_inline(displayGameVideo, DisplayGameVideo);
-    spdlog::info("SkipIntro: intro videos skipped");
+    spdlog::info("SkipIntro: Intro videos skipped");
 }
