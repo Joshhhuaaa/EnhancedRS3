@@ -70,6 +70,9 @@
       <Filter>external</Filter>
     </ClCompile>
     <ClCompile Include="src\dllmain.cpp" />
+<ClCompile Include="src\features\raw_input.cpp">
+      <Filter>features</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\core\callbacks.h">
