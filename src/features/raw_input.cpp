@@ -8,8 +8,8 @@
 
 static constexpr bool bRawInput = true;
 
-static Config::Float fLookSensitivity("General", "LookSensitivity", 1.0f);
-static Config::Float fCursorSensitivity("General", "CursorSensitivity", 1.0f);
+static Config::Float fLookSensitivity("Input", "LookSensitivity", 1.0f);
+static Config::Float fCursorSensitivity("Input", "CursorSensitivity", 1.0f);
 
 namespace
 {
@@ -31,20 +31,32 @@ namespace
     constexpr int IST_Axis    = 4;
 
     SafetyHookInline shUpdateInput{};
-    SafetyHookInline shCauseInputEvent{};
+
+    int (__fastcall* CauseInputEvent)(void*, void*, int, int, float) = nullptr;
 
     WNDPROC gameWndProc  = nullptr;
     HWND    hGameWindow  = nullptr;
 
-    constexpr DWORD DISCL_NONEXCLUSIVE_FOREGROUND = 0x5;  // DISCL_NONEXCLUSIVE(1) | DISCL_FOREGROUND(4)
-
     void** ppMouse = nullptr;
 
-    float deltaX    = 0.0f;
-    float deltaY    = 0.0f;
-    bool  bDropAxis = false;
+    float deltaX = 0.0f;
+    float deltaY = 0.0f;
 
-    void* gSelf = nullptr;
+    void* gSelf      = nullptr;
+    bool  bLegacyOff = false;
+
+    // With legacy messages disabled, the thread key state is not updated for side mouse buttons.
+    // UpdateInput's release sweep reads GetKeyState, so held Mouse 4/5 buttons would otherwise
+    // be treated as released on the next frame.
+    void SetXButtonState(int vk, bool bDown)
+    {
+        BYTE keys[256];
+        if (GetKeyboardState(keys))
+        {
+            keys[vk] = bDown ? 0x80 : 0;
+            SetKeyboardState(keys);
+        }
+    }
 
     LRESULT CALLBACK RawInputWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
     {
@@ -65,25 +77,28 @@ namespace
                 USHORT flags = raw.data.mouse.usButtonFlags;
                 if (gSelf)
                 {
-                    if (flags & RI_MOUSE_LEFT_BUTTON_DOWN)   shCauseInputEvent.thiscall<int>(gSelf, IK_LeftMouse, IST_Press, 0.0f);
-                    if (flags & RI_MOUSE_LEFT_BUTTON_UP)     shCauseInputEvent.thiscall<int>(gSelf, IK_LeftMouse, IST_Release, 0.0f);
-                    if (flags & RI_MOUSE_RIGHT_BUTTON_DOWN)  shCauseInputEvent.thiscall<int>(gSelf, IK_RightMouse, IST_Press, 0.0f);
-                    if (flags & RI_MOUSE_RIGHT_BUTTON_UP)    shCauseInputEvent.thiscall<int>(gSelf, IK_RightMouse, IST_Release, 0.0f);
-                    if (flags & RI_MOUSE_MIDDLE_BUTTON_DOWN) shCauseInputEvent.thiscall<int>(gSelf, IK_MiddleMouse, IST_Press, 0.0f);
-                    if (flags & RI_MOUSE_MIDDLE_BUTTON_UP)   shCauseInputEvent.thiscall<int>(gSelf, IK_MiddleMouse, IST_Release, 0.0f);
-                    if (flags & RI_MOUSE_BUTTON_4_DOWN)      shCauseInputEvent.thiscall<int>(gSelf, IK_XButton1, IST_Press, 0.0f);
-                    if (flags & RI_MOUSE_BUTTON_4_UP)        shCauseInputEvent.thiscall<int>(gSelf, IK_XButton1, IST_Release, 0.0f);
-                    if (flags & RI_MOUSE_BUTTON_5_DOWN)      shCauseInputEvent.thiscall<int>(gSelf, IK_XButton2, IST_Press, 0.0f);
-                    if (flags & RI_MOUSE_BUTTON_5_UP)        shCauseInputEvent.thiscall<int>(gSelf, IK_XButton2, IST_Release, 0.0f);
+                    if (flags & RI_MOUSE_LEFT_BUTTON_DOWN)   CauseInputEvent(gSelf, nullptr, IK_LeftMouse, IST_Press, 0.0f);
+                    if (flags & RI_MOUSE_LEFT_BUTTON_UP)     CauseInputEvent(gSelf, nullptr, IK_LeftMouse, IST_Release, 0.0f);
+                    if (flags & RI_MOUSE_RIGHT_BUTTON_DOWN)  CauseInputEvent(gSelf, nullptr, IK_RightMouse, IST_Press, 0.0f);
+                    if (flags & RI_MOUSE_RIGHT_BUTTON_UP)    CauseInputEvent(gSelf, nullptr, IK_RightMouse, IST_Release, 0.0f);
+                    if (flags & RI_MOUSE_MIDDLE_BUTTON_DOWN) CauseInputEvent(gSelf, nullptr, IK_MiddleMouse, IST_Press, 0.0f);
+                    if (flags & RI_MOUSE_MIDDLE_BUTTON_UP)   CauseInputEvent(gSelf, nullptr, IK_MiddleMouse, IST_Release, 0.0f);
+                    if (flags & RI_MOUSE_BUTTON_4_DOWN)      CauseInputEvent(gSelf, nullptr, IK_XButton1, IST_Press, 0.0f);
+                    if (flags & RI_MOUSE_BUTTON_4_UP)        CauseInputEvent(gSelf, nullptr, IK_XButton1, IST_Release, 0.0f);
+                    if (flags & RI_MOUSE_BUTTON_5_DOWN)      CauseInputEvent(gSelf, nullptr, IK_XButton2, IST_Press, 0.0f);
+                    if (flags & RI_MOUSE_BUTTON_5_UP)        CauseInputEvent(gSelf, nullptr, IK_XButton2, IST_Release, 0.0f);
+
+                    if (flags & (RI_MOUSE_BUTTON_4_DOWN | RI_MOUSE_BUTTON_4_UP)) SetXButtonState(VK_XBUTTON1, (flags & RI_MOUSE_BUTTON_4_DOWN) != 0);
+                    if (flags & (RI_MOUSE_BUTTON_5_DOWN | RI_MOUSE_BUTTON_5_UP)) SetXButtonState(VK_XBUTTON2, (flags & RI_MOUSE_BUTTON_5_DOWN) != 0);
 
                     if (flags & RI_MOUSE_WHEEL)
                     {
                         SHORT wheelDelta = static_cast<SHORT>(raw.data.mouse.usButtonData);
-                        shCauseInputEvent.thiscall<int>(gSelf, IK_MouseW, IST_Axis, static_cast<float>(wheelDelta));
+                        CauseInputEvent(gSelf, nullptr, IK_MouseW, IST_Axis, static_cast<float>(wheelDelta));
 
                         int wheelKey = wheelDelta > 0 ? IK_MouseWheelUp : IK_MouseWheelDown;
-                        shCauseInputEvent.thiscall<int>(gSelf, wheelKey, IST_Press, 0.0f);
-                        shCauseInputEvent.thiscall<int>(gSelf, wheelKey, IST_Release, 0.0f);
+                        CauseInputEvent(gSelf, nullptr, wheelKey, IST_Press, 0.0f);
+                        CauseInputEvent(gSelf, nullptr, wheelKey, IST_Release, 0.0f);
                     }
                 }
             }
@@ -92,13 +107,12 @@ namespace
         return CallWindowProcW(gameWndProc, hWnd, msg, wParam, lParam);
     }
 
-    // Re-registers raw mouse input after DirectInput reclaims the window
-    void RegisterRawInput(HWND hWnd)
+    void RegisterRawInput(HWND hWnd, bool bNoLegacy)
     {
         RAWINPUTDEVICE rid{};
         rid.usUsagePage = HID_USAGE_PAGE_GENERIC;
         rid.usUsage = HID_USAGE_GENERIC_MOUSE;
-        rid.dwFlags = RIDEV_INPUTSINK;
+        rid.dwFlags = RIDEV_INPUTSINK | (bNoLegacy ? RIDEV_NOLEGACY : 0);
         rid.hwndTarget = hWnd;
         if (!RegisterRawInputDevices(&rid, 1, sizeof(rid)))
             spdlog::error("RawInput: RegisterRawInputDevices failed, GetLastError {}", GetLastError());
@@ -115,27 +129,14 @@ namespace
             void** vtable = *reinterpret_cast<void***>(mouse);
 
             reinterpret_cast<HRESULT(__stdcall*)(void*)>(vtable[8])(mouse);  // Unacquire
-            HRESULT hr = reinterpret_cast<HRESULT(__stdcall*)(void*, HWND, DWORD)>(vtable[13])
-                (mouse, hWnd, DISCL_NONEXCLUSIVE_FOREGROUND);                // SetCooperativeLevel
-            reinterpret_cast<HRESULT(__stdcall*)(void*)>(vtable[7])(mouse);  // Acquire
+            *ppMouse = nullptr;
 
-            spdlog::info("RawInput: mouse cooperative level set non-exclusive -> {:#x}", static_cast<unsigned>(hr));
-        }
-        else
-        {
-            spdlog::error("RawInput: Mouse not initialized yet, still exclusive - WM_INPUT will die out after the first second");
+            spdlog::info("RawInput: DirectInput mouse unacquired and detached");
         }
 
-        RegisterRawInput(hWnd);
+        bLegacyOff = false;
+        RegisterRawInput(hWnd, false);
         spdlog::info("RawInput: attached to hwnd {:#x}", reinterpret_cast<uintptr_t>(hWnd));
-    }
-
-    int __fastcall CauseInputEvent(void* self, void* edx, int key, int action, float delta)
-    {
-        if (bDropAxis && (key == IK_MouseX || key == IK_MouseY))
-            return 0;
-
-        return shCauseInputEvent.thiscall<int>(self, key, action, delta);
     }
 
     void __fastcall UpdateInput(uint8_t* self, void* edx, int reset, float deltaSeconds)
@@ -152,23 +153,27 @@ namespace
         if (GetCursorInfo(&ci) && (ci.flags & CURSOR_SHOWING))
             ShowCursor(FALSE);
 
-        bDropAxis = true;
         shUpdateInput.thiscall<void>(self, reset, deltaSeconds);
-        bDropAxis = false;
 
-        if (hWnd)
-            RegisterRawInput(hWnd);
+        bool bInMenu = Script::GetBool(self, L"bShowWindowsMouse");
+
+        // Legacy mouse messages only serve the menus, in gameplay every raw report also costs WM_MOUSEMOVE + WM_NCHITTEST / WM_SETCURSOR
+        bool bNoLegacy = !bInMenu && GetForegroundWindow() == hGameWindow;
+        if (hWnd && bNoLegacy != bLegacyOff)
+        {
+            bLegacyOff = bNoLegacy;
+            RegisterRawInput(hWnd, bNoLegacy);
+        }
 
         if (!reset)
         {
-            bool  bInMenu     = Script::GetBool(self, L"bShowWindowsMouse");
             float sensitivity = bInMenu ? fCursorSensitivity : fLookSensitivity;
 
             if (deltaX != 0.0f)
-                shCauseInputEvent.thiscall<int>(self, IK_MouseX, IST_Axis, deltaX * sensitivity);
+                CauseInputEvent(self, nullptr, IK_MouseX, IST_Axis, deltaX * sensitivity);
 
             if (deltaY != 0.0f)
-                shCauseInputEvent.thiscall<int>(self, IK_MouseY, IST_Axis, -deltaY * sensitivity);
+                CauseInputEvent(self, nullptr, IK_MouseY, IST_Axis, -deltaY * sensitivity);
         }
 
         deltaX = 0.0f;
@@ -183,19 +188,18 @@ FEATURE(WinDrv, RawInput)
 
     auto windrv = GetModuleHandleW(L"WinDrv");
     auto updateInput = GetProcAddress(windrv, "?UpdateInput@UWindowsViewport@@UAEXHM@Z");
-    auto causeInputEvent = GetProcAddress(windrv, "?CauseInputEvent@UWindowsViewport@@QAEHHW4EInputAction@@M@Z");
+    CauseInputEvent = reinterpret_cast<decltype(CauseInputEvent)>(GetProcAddress(windrv, "?CauseInputEvent@UWindowsViewport@@QAEHHW4EInputAction@@M@Z"));
 
-    if (!updateInput || !causeInputEvent)
+    if (!updateInput || !CauseInputEvent)
     {
-        spdlog::error("RawInput: UpdateInput {}, CauseInputEvent {}", (void*)updateInput, (void*)causeInputEvent);
+        spdlog::error("RawInput: UpdateInput {}, CauseInputEvent {}", (void*)updateInput, (void*)CauseInputEvent);
         return;
     }
 
     ppMouse = reinterpret_cast<void**>(GetProcAddress(windrv, "?Mouse@UWindowsViewport@@2PAUIDirectInputDevice8W@@A"));
     if (!ppMouse)
-        spdlog::error("RawInput: Mouse export not found, staying exclusive");
+        spdlog::error("RawInput: Mouse export not found, DirectInput mouse left running");
 
-    shCauseInputEvent = safetyhook::create_inline(causeInputEvent, CauseInputEvent);
     shUpdateInput = safetyhook::create_inline(updateInput, UpdateInput);
     spdlog::info("RawInput: mouse axes taken from raw input, one delta per frame, look x{} / menu cursor x{}",
         static_cast<float>(fLookSensitivity), static_cast<float>(fCursorSensitivity));
