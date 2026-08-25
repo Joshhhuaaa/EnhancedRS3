@@ -35,4 +35,7 @@ namespace Script
 
     // True when the object's class is exactly this one, not a subclass of it.
     bool IsClass(void* object, const wchar_t* className);
+
+    // True when the object's class is this one or anything derived from it.
+    bool IsA(void* object, const wchar_t* className);
 }

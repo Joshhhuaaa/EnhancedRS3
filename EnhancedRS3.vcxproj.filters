@@ -45,6 +45,9 @@
     <ClCompile Include="src\features\master_server.cpp">
       <Filter>features</Filter>
     </ClCompile>
+    <ClCompile Include="src\features\hud_widescreen.cpp">
+      <Filter>features</Filter>
+    </ClCompile>
     <ClCompile Include="src\features\skip_intro.cpp">
       <Filter>features</Filter>
     </ClCompile>
@@ -76,10 +79,10 @@
       <Filter>external</Filter>
     </ClCompile>
     <ClCompile Include="src\dllmain.cpp" />
-<ClCompile Include="src\features\raw_input.cpp">
+    <ClCompile Include="src\features\raw_input.cpp">
       <Filter>features</Filter>
     </ClCompile>
-<ClCompile Include="src\features\localization.cpp">
+    <ClCompile Include="src\features\localization.cpp">
       <Filter>features</Filter>
     </ClCompile>
   </ItemGroup>
