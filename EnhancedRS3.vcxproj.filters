@@ -39,6 +39,9 @@
     <ClCompile Include="src\features\hit_test.cpp">
       <Filter>features</Filter>
     </ClCompile>
+    <ClCompile Include="src\features\master_server.cpp">
+      <Filter>features</Filter>
+    </ClCompile>
     <ClCompile Include="src\features\skip_intro.cpp">
       <Filter>features</Filter>
     </ClCompile>
