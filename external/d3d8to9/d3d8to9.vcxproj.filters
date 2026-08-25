@@ -25,6 +25,15 @@
     <ClCompile Include="source\interface_query.cpp">
       <Filter>helpers</Filter>
     </ClCompile>
+    <ClCompile Include="source\ini.cpp" />
+    <ClCompile Include="source\smaa.cpp" />
+    <ClCompile Include="source\smaa_resources.cpp" />
+    <ClCompile Include="source\embedded_d3dx9.cpp">
+      <Filter>helpers</Filter>
+    </ClCompile>
+    <ClCompile Include="source\MemoryModule\MemoryModule.c">
+      <Filter>helpers</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="res\resource.h">
@@ -42,6 +51,14 @@
       <Filter>helpers</Filter>
     </ClInclude>
     <ClInclude Include="source\interface_query.hpp">
+      <Filter>helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="source\ini.hpp" />
+    <ClInclude Include="source\smaa.hpp" />
+    <ClInclude Include="source\embedded_d3dx9.hpp">
+      <Filter>helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="source\MemoryModule\MemoryModule.h">
       <Filter>helpers</Filter>
     </ClInclude>
   </ItemGroup>

@@ -5,10 +5,13 @@
 
 #include "d3dx9.hpp"
 #include "d3d8to9.hpp"
+#include "embedded_d3dx9.hpp" // SMAA
 
 PFN_D3DXAssembleShader D3DXAssembleShader = nullptr;
 PFN_D3DXDisassembleShader D3DXDisassembleShader = nullptr;
 PFN_D3DXLoadSurfaceFromSurface D3DXLoadSurfaceFromSurface = nullptr;
+PFN_D3DXCompileShader D3DXCompileShader = nullptr;
+PFN_D3DXCreateTextureFromFileInMemoryEx D3DXCreateTextureFromFileInMemoryEx = nullptr;
 
 #ifndef D3D8TO9NOLOG
  // Very simple logging for the purpose of debugging only.
@@ -157,6 +160,8 @@ extern "C" IDirect3D8 *WINAPI Direct3DCreate8(UINT SDKVersion)
 	}
 
 	// Load D3DX
+	InitEmbeddedD3DX(); // SMAA
+
 	if (!D3DXAssembleShader || !D3DXDisassembleShader || !D3DXLoadSurfaceFromSurface)
 	{
 		const HMODULE module = LoadLibrary(TEXT("d3dx9_43.dll"));
@@ -166,6 +171,8 @@ extern "C" IDirect3D8 *WINAPI Direct3DCreate8(UINT SDKVersion)
 			D3DXAssembleShader = reinterpret_cast<PFN_D3DXAssembleShader>(GetProcAddress(module, "D3DXAssembleShader"));
 			D3DXDisassembleShader = reinterpret_cast<PFN_D3DXDisassembleShader>(GetProcAddress(module, "D3DXDisassembleShader"));
 			D3DXLoadSurfaceFromSurface = reinterpret_cast<PFN_D3DXLoadSurfaceFromSurface>(GetProcAddress(module, "D3DXLoadSurfaceFromSurface"));
+			D3DXCompileShader = reinterpret_cast<PFN_D3DXCompileShader>(GetProcAddress(module, "D3DXCompileShader")); // SMAA
+			D3DXCreateTextureFromFileInMemoryEx = reinterpret_cast<PFN_D3DXCreateTextureFromFileInMemoryEx>(GetProcAddress(module, "D3DXCreateTextureFromFileInMemoryEx")); // SMAA
 		}
 		else
 		{

@@ -89,6 +89,21 @@
     <ClCompile Include="source\d3d8to9_volume.cpp" />
     <ClCompile Include="source\d3d8types.cpp" />
     <ClCompile Include="source\interface_query.cpp" />
+    <ClCompile Include="source\ini.cpp" />
+    <ClCompile Include="source\smaa.cpp" />
+    <ClCompile Include="source\smaa_resources.cpp">
+      <!-- The embedded SMAA source text and lookup textures exceed the default object file limits -->
+      <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="source\embedded_d3dx9.cpp">
+      <!-- Embedded d3dx9_43 and d3dcompiler_47 DLLs exceed the default object file limits -->
+      <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="source\MemoryModule\MemoryModule.c">
+      <CompileAs>CompileAsC</CompileAs>
+      <SDLCheck>false</SDLCheck>
+      <WarningLevel>Level1</WarningLevel>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="res\resource.h" />
@@ -98,6 +113,10 @@
     <ClInclude Include="source\d3d8types.hpp" />
     <ClInclude Include="source\d3dx9.hpp" />
     <ClInclude Include="source\interface_query.hpp" />
+    <ClInclude Include="source\ini.hpp" />
+    <ClInclude Include="source\smaa.hpp" />
+    <ClInclude Include="source\embedded_d3dx9.hpp" />
+    <ClInclude Include="source\MemoryModule\MemoryModule.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="res\d3d8.def" />

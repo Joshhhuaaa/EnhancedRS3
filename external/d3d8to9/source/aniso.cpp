@@ -1,6 +1,6 @@
 #include "aniso.hpp"
+#include "ini.hpp"
 
-#include <cstdlib>
 #include <fstream>
 
 #ifndef D3D8TO9NOLOG
@@ -19,27 +19,6 @@ namespace
 	DWORD GameMinFilter[Stages] = {};
 	DWORD GameMaxAnisotropy[Stages] = {};
 	bool  Configured = false;
-
-	DWORD ReadIniLevel()
-	{
-		wchar_t Path[MAX_PATH] = {};
-
-		if (GetModuleFileNameW(nullptr, Path, MAX_PATH) == 0)
-			return 0;
-
-		wchar_t *const Slash = wcsrchr(Path, L'\\');
-		if (Slash == nullptr)
-			return 0;
-
-		Slash[1] = L'\0';
-		wcsncat_s(Path, L"plugins\\EnhancedRS3.ini", _TRUNCATE);
-
-		wchar_t Text[64] = {};
-		GetPrivateProfileStringW(L"General", L"AnisotropicFiltering", L"16", Text, _countof(Text), Path);
-
-		// Parse the number before any trailing // comment
-		return static_cast<DWORD>(wcstoul(Text, nullptr, 10));
-	}
 }
 
 void Aniso::OnDeviceReady(IDirect3DDevice9 *Device)
@@ -56,7 +35,7 @@ void Aniso::OnDeviceReady(IDirect3DDevice9 *Device)
 			CapsMax = Caps.MaxAnisotropy;
 		}
 
-		Level = ReadIniLevel();
+		Level = static_cast<DWORD>(Ini::ReadInt(L"AnisotropicFiltering", 16));
 		if (Level > CapsMax)
 			Level = CapsMax;
 		if (Level <= 1)

@@ -6,6 +6,7 @@
 #include "d3dx9.hpp"
 #include "d3d8to9.hpp"
 #include "aniso.hpp" // ANISO
+#include "smaa.hpp" // SMAA
 #include <regex>
 #include <assert.h>
 
@@ -40,6 +41,8 @@ Direct3DDevice8::Direct3DDevice8(Direct3D8 *d3d, IDirect3DDevice9 *ProxyInterfac
 }
 Direct3DDevice8::~Direct3DDevice8()
 {
+	Smaa::Shutdown(); // SMAA
+
 	delete ProxyAddressLookupTable;
 }
 
@@ -68,7 +71,7 @@ ULONG STDMETHODCALLTYPE Direct3DDevice8::AddRef()
 	ULONG LastRefCount = ProxyInterface->AddRef();
 
 	// Shaders and state blocks increase ref counter in d3d9 but not in d3d8
-	DWORD ExtraRefs = VertexShaderAndDeclarationCount + PixelShaderHandles.size() + StateBlockTokens.size();
+	DWORD ExtraRefs = VertexShaderAndDeclarationCount + PixelShaderHandles.size() + StateBlockTokens.size() + Smaa::InternalDeviceRefs(); // SMAA
 	if (ExtraRefs <= LastRefCount)
 	{
 		LastRefCount = LastRefCount - ExtraRefs;
@@ -85,7 +88,7 @@ ULONG STDMETHODCALLTYPE Direct3DDevice8::Release()
 
 	// Shaders and StateBlocks are destroyed alongside the device that created them in D3D8 but not in D3D9
 	// so we need to Release any remaining shaders or state blocks when the device is released to mirror that behaviour
-	DWORD ExtraRefs = VertexShaderAndDeclarationCount + PixelShaderHandles.size() + StateBlockTokens.size();
+	DWORD ExtraRefs = VertexShaderAndDeclarationCount + PixelShaderHandles.size() + StateBlockTokens.size() + Smaa::InternalDeviceRefs(); // SMAA
 	if (ExtraRefs <= LastRefCount)
 	{
 		LastRefCount = LastRefCount - ExtraRefs;
@@ -93,6 +96,8 @@ ULONG STDMETHODCALLTYPE Direct3DDevice8::Release()
 		{
 			// Release shaders and state blocks when only one reference is left
 			ReleaseShadersAndStateBlocks();
+			// Our own proxy objects go with them, or the device never reaches zero
+			Smaa::Shutdown(); // SMAA
 		}
 	}
 
@@ -213,6 +218,14 @@ HRESULT STDMETHODCALLTYPE Direct3DDevice8::Reset(D3DPRESENT_PARAMETERS8 *pPresen
 		}
 	}
 
+	// The SMAA render targets are DEFAULT-pool and the state block is a device-state object,
+	// and both classes make Reset fail while they are alive. Shaders, the vertex declaration
+	// and the MANAGED lookup textures survive, and the rest is rebuilt on the next Present.
+	// Skipped while the device is still lost, because Reset cannot succeed yet and the game's
+	// recovery loop assumes a failed Reset left everything as it was
+	if (deviceState != D3DERR_DEVICELOST)
+		Smaa::OnDeviceLost(); // SMAA
+
 	D3DPRESENT_PARAMETERS PresentParams;
 	ConvertPresentParameters(*pPresentationParameters, PresentParams);
 
@@ -236,6 +249,8 @@ HRESULT STDMETHODCALLTYPE Direct3DDevice8::Reset(D3DPRESENT_PARAMETERS8 *pPresen
 HRESULT STDMETHODCALLTYPE Direct3DDevice8::Present(const RECT *pSourceRect, const RECT *pDestRect, HWND hDestWindowOverride, const RGNDATA *pDirtyRegion)
 {
 	UNREFERENCED_PARAMETER(pDirtyRegion);
+
+	Smaa::OnPresent(ProxyInterface); // SMAA
 
 	return ProxyInterface->Present(pSourceRect, pDestRect, hDestWindowOverride, nullptr);
 }
@@ -1131,24 +1146,28 @@ HRESULT STDMETHODCALLTYPE Direct3DDevice8::GetCurrentTexturePalette(UINT *pPalet
 HRESULT STDMETHODCALLTYPE Direct3DDevice8::DrawPrimitive(D3DPRIMITIVETYPE PrimitiveType, UINT StartVertex, UINT PrimitiveCount)
 {
 	ApplyClipPlanes();
+	Smaa::OnDraw(); // SMAA
 	ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
 	return D3D_OK;
 }
 HRESULT STDMETHODCALLTYPE Direct3DDevice8::DrawIndexedPrimitive(D3DPRIMITIVETYPE PrimitiveType, UINT MinIndex, UINT NumVertices, UINT StartIndex, UINT PrimitiveCount)
 {
 	ApplyClipPlanes();
+	Smaa::OnDraw(); // SMAA
 	ProxyInterface->DrawIndexedPrimitive(PrimitiveType, CurrentBaseVertexIndex, MinIndex, NumVertices, StartIndex, PrimitiveCount);
 	return D3D_OK;
 }
 HRESULT STDMETHODCALLTYPE Direct3DDevice8::DrawPrimitiveUP(D3DPRIMITIVETYPE PrimitiveType, UINT PrimitiveCount, const void *pVertexStreamZeroData, UINT VertexStreamZeroStride)
 {
 	ApplyClipPlanes();
+	Smaa::OnDraw(); // SMAA
 	ProxyInterface->DrawPrimitiveUP(PrimitiveType, PrimitiveCount, pVertexStreamZeroData, VertexStreamZeroStride);
 	return D3D_OK;
 }
 HRESULT STDMETHODCALLTYPE Direct3DDevice8::DrawIndexedPrimitiveUP(D3DPRIMITIVETYPE PrimitiveType, UINT MinVertexIndex, UINT NumVertexIndices, UINT PrimitiveCount, const void *pIndexData, D3DFORMAT IndexDataFormat, const void *pVertexStreamZeroData, UINT VertexStreamZeroStride)
 {
 	ApplyClipPlanes();
+	Smaa::OnDraw(); // SMAA
 	ProxyInterface->DrawIndexedPrimitiveUP(PrimitiveType, MinVertexIndex, NumVertexIndices, PrimitiveCount, pIndexData, IndexDataFormat, pVertexStreamZeroData, VertexStreamZeroStride);
 	return D3D_OK;
 }
