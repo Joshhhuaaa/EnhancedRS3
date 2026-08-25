@@ -70,6 +70,7 @@
     <ClCompile Include="src\features\net_speed.cpp" />
     <ClCompile Include="src\features\raw_input.cpp" />
     <ClCompile Include="src\features\skip_intro.cpp" />
+    <ClCompile Include="src\features\zoom_ramp.cpp" />
   </ItemGroup>
   <ItemGroup Label="External">
     <ClCompile Include="external\hooking\Hooking.Patterns.cpp">
