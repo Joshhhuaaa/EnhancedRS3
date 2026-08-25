@@ -4,6 +4,7 @@ inline HMODULE baseModule = nullptr;
 inline std::filesystem::path sExePath;
 inline std::string sExeName;
 inline std::filesystem::path sAsiPath;
+inline bool bEditor = false;
 
 void InitPaths();
 

@@ -9,6 +9,7 @@ void InitPaths()
     auto exe = std::filesystem::path(path);
     sExePath = exe.parent_path();
     sExeName = exe.filename().string();
+    bEditor = _stricmp(sExeName.c_str(), "UnrealEd.exe") == 0;
     if (GetModuleFileNameW(baseModule, path, MAX_PATH))
         sAsiPath = std::filesystem::path(path).parent_path();
     else

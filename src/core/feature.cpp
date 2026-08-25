@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "common.hpp"
 #include "feature.hpp"
 
 namespace
@@ -7,6 +8,7 @@ namespace
     {
         GameModule module;
         FeatureFn  fn;
+        bool       editor;
     };
 
     std::vector<Entry>& List()
@@ -37,9 +39,9 @@ namespace
     }
 }
 
-Feature::Feature(GameModule module, FeatureFn fn)
+Feature::Feature(GameModule module, FeatureFn fn, bool editor)
 {
-    List().push_back({ module, fn });
+    List().push_back({ module, fn, editor });
 }
 
 void RegisterFeatures()
@@ -50,7 +52,8 @@ void RegisterFeatures()
     std::map<std::wstring, std::vector<FeatureFn>> byModule;
 
     for (auto& entry : List())
-        byModule[ModuleName(entry.module)].push_back(entry.fn);
+        if (entry.editor || !bEditor)
+            byModule[ModuleName(entry.module)].push_back(entry.fn);
 
     for (auto& [name, fns] : byModule)
     {

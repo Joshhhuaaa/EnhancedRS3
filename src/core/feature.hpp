@@ -24,7 +24,7 @@ using FeatureFn = void(*)();
 
 struct Feature
 {
-    Feature(GameModule module, FeatureFn fn);
+    Feature(GameModule module, FeatureFn fn, bool editor = false);
 };
 
 void RegisterFeatures();
@@ -32,4 +32,10 @@ void RegisterFeatures();
 #define FEATURE(module, name)                                       \
     static void name();                                             \
     static Feature name##_Feature(GameModule::module, name);        \
+    static void name()
+
+// A fix that also runs under UnrealEd.exe. Everything else is game only.
+#define EDITOR_FEATURE(module, name)                                \
+    static void name();                                             \
+    static Feature name##_Feature(GameModule::module, name, true);  \
     static void name()

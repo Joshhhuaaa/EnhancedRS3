@@ -183,6 +183,9 @@ namespace
 
 void Logging::Initialize()
 {
+    // The editor shares the plugins folder with the game, so it logs to its own file
+    auto logFile = sAsiPath / (bEditor ? APP_NAME ".UnrealEd.log" : APP_NAME ".log");
+
     try
     {
 #ifdef ENHANCED_DEBUG
@@ -194,7 +197,7 @@ void Logging::Initialize()
         freopen_s(&dummy, "CONOUT$", "w", stdout);
 
         // Save the previous log before writing the new one, so the window has history
-        std::ifstream old(sAsiPath / (APP_NAME ".log"), std::ios::binary | std::ios::ate);
+        std::ifstream old(logFile, std::ios::binary | std::ios::ate);
         if (old)
         {
             auto size = static_cast<size_t>(old.tellg());
@@ -206,7 +209,7 @@ void Logging::Initialize()
 #endif
 
         std::vector<spdlog::sink_ptr> sinks{
-            std::make_shared<spdlog::sinks::basic_file_sink_mt>((sAsiPath / (APP_NAME ".log")).string(), true)
+            std::make_shared<spdlog::sinks::basic_file_sink_mt>(logFile.string(), true)
         };
 #ifdef ENHANCED_DEBUG
         sinks.push_back(std::make_shared<spdlog::sinks::stdout_sink_mt>());
