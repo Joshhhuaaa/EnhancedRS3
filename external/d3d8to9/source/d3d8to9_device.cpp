@@ -5,6 +5,7 @@
 
 #include "d3dx9.hpp"
 #include "d3d8to9.hpp"
+#include "aniso.hpp" // ANISO
 #include <regex>
 #include <assert.h>
 
@@ -34,6 +35,8 @@ Direct3DDevice8::Direct3DDevice8(Direct3D8 *d3d, IDirect3DDevice9 *ProxyInterfac
 	// Some games require defaulting to -0.0f to work correctly
 	const float DepthBias = -0.0f;
 	ProxyInterface->SetRenderState(D3DRS_DEPTHBIAS, *(const DWORD *)&DepthBias);
+
+	Aniso::OnDeviceReady(ProxyInterface); // ANISO
 }
 Direct3DDevice8::~Direct3DDevice8()
 {
@@ -224,6 +227,8 @@ HRESULT STDMETHODCALLTYPE Direct3DDevice8::Reset(D3DPRESENT_PARAMETERS8 *pPresen
 		// Some games require defaulting to -0.0f to work correctly
 		float DepthBias = -0.0f;
 		ProxyInterface->SetRenderState(D3DRS_DEPTHBIAS, *(DWORD*)&DepthBias);
+
+		Aniso::OnDeviceReady(ProxyInterface); // ANISO
 	}
 
 	return hr;
@@ -975,6 +980,8 @@ HRESULT STDMETHODCALLTYPE Direct3DDevice8::GetTextureStageState(DWORD Stage, D3D
 	case D3DTSS_MAGFILTER:
 		return ProxyInterface->GetSamplerState(Stage, D3DSAMP_MAGFILTER, pValue);
 	case D3DTSS_MINFILTER:
+		if (Aniso::OnGetMinFilter(Stage, pValue)) // ANISO
+			return D3D_OK;
 		return ProxyInterface->GetSamplerState(Stage, D3DSAMP_MINFILTER, pValue);
 	case D3DTSS_MIPFILTER:
 		return ProxyInterface->GetSamplerState(Stage, D3DSAMP_MIPFILTER, pValue);
@@ -983,6 +990,8 @@ HRESULT STDMETHODCALLTYPE Direct3DDevice8::GetTextureStageState(DWORD Stage, D3D
 	case D3DTSS_MAXMIPLEVEL:
 		return ProxyInterface->GetSamplerState(Stage, D3DSAMP_MAXMIPLEVEL, pValue);
 	case D3DTSS_MAXANISOTROPY:
+		if (Aniso::OnGetMaxAnisotropy(Stage, pValue)) // ANISO
+			return D3D_OK;
 		return ProxyInterface->GetSamplerState(Stage, D3DSAMP_MAXANISOTROPY, pValue);
 	default:
 		return ProxyInterface->GetTextureStageState(Stage, Type, pValue);
@@ -1005,7 +1014,7 @@ HRESULT STDMETHODCALLTYPE Direct3DDevice8::SetTextureStageState(DWORD Stage, D3D
 			Value = D3DTEXF_LINEAR;
 		return ProxyInterface->SetSamplerState(Stage, D3DSAMP_MAGFILTER, Value);
 	case D3DTSS_MINFILTER:
-		return ProxyInterface->SetSamplerState(Stage, D3DSAMP_MINFILTER, Value);
+		return ProxyInterface->SetSamplerState(Stage, D3DSAMP_MINFILTER, Aniso::OnSetMinFilter(Stage, Value)); // ANISO
 	case D3DTSS_MIPFILTER:
 		return ProxyInterface->SetSamplerState(Stage, D3DSAMP_MIPFILTER, Value);
 	case D3DTSS_MIPMAPLODBIAS:
@@ -1013,7 +1022,7 @@ HRESULT STDMETHODCALLTYPE Direct3DDevice8::SetTextureStageState(DWORD Stage, D3D
 	case D3DTSS_MAXMIPLEVEL:
 		return ProxyInterface->SetSamplerState(Stage, D3DSAMP_MAXMIPLEVEL, Value);
 	case D3DTSS_MAXANISOTROPY:
-		return ProxyInterface->SetSamplerState(Stage, D3DSAMP_MAXANISOTROPY, Value);
+		return ProxyInterface->SetSamplerState(Stage, D3DSAMP_MAXANISOTROPY, Aniso::OnSetMaxAnisotropy(Stage, Value)); // ANISO
 	default:
 		return ProxyInterface->SetTextureStageState(Stage, Type, Value);
 	}

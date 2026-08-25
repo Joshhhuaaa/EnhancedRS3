@@ -9,6 +9,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="source\aniso.cpp" />
     <ClCompile Include="source\d3d8to9.cpp" />
     <ClCompile Include="source\d3d8to9_base.cpp" />
     <ClCompile Include="source\d3d8to9_device.cpp" />
@@ -32,6 +33,7 @@
     <ClInclude Include="source\d3d8.hpp">
       <Filter>helpers</Filter>
     </ClInclude>
+    <ClInclude Include="source\aniso.hpp" />
     <ClInclude Include="source\d3d8to9.hpp" />
     <ClInclude Include="source\d3d8types.hpp">
       <Filter>helpers</Filter>
