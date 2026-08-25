@@ -18,6 +18,8 @@ namespace
     constexpr int IK_LeftMouse      = 1;
     constexpr int IK_RightMouse     = 2;
     constexpr int IK_MiddleMouse    = 4;
+    constexpr int IK_XButton1       = 5; // IK_Unknown05 = VK_XBUTTON1
+    constexpr int IK_XButton2       = 6; // IK_Unknown06 = VK_XBUTTON2
     constexpr int IK_MouseX         = 0xe4;
     constexpr int IK_MouseY         = 0xe5;
     constexpr int IK_MouseW         = 0xe7;
@@ -69,6 +71,10 @@ namespace
                     if (flags & RI_MOUSE_RIGHT_BUTTON_UP)    shCauseInputEvent.thiscall<int>(gSelf, IK_RightMouse, IST_Release, 0.0f);
                     if (flags & RI_MOUSE_MIDDLE_BUTTON_DOWN) shCauseInputEvent.thiscall<int>(gSelf, IK_MiddleMouse, IST_Press, 0.0f);
                     if (flags & RI_MOUSE_MIDDLE_BUTTON_UP)   shCauseInputEvent.thiscall<int>(gSelf, IK_MiddleMouse, IST_Release, 0.0f);
+                    if (flags & RI_MOUSE_BUTTON_4_DOWN)      shCauseInputEvent.thiscall<int>(gSelf, IK_XButton1, IST_Press, 0.0f);
+                    if (flags & RI_MOUSE_BUTTON_4_UP)        shCauseInputEvent.thiscall<int>(gSelf, IK_XButton1, IST_Release, 0.0f);
+                    if (flags & RI_MOUSE_BUTTON_5_DOWN)      shCauseInputEvent.thiscall<int>(gSelf, IK_XButton2, IST_Press, 0.0f);
+                    if (flags & RI_MOUSE_BUTTON_5_UP)        shCauseInputEvent.thiscall<int>(gSelf, IK_XButton2, IST_Release, 0.0f);
 
                     if (flags & RI_MOUSE_WHEEL)
                     {

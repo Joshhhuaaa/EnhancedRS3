@@ -63,6 +63,7 @@
     <ClCompile Include="src\features\alt_tab_crash.cpp" />
     <ClCompile Include="src\features\fov.cpp" />
     <ClCompile Include="src\features\hit_test.cpp" />
+    <ClCompile Include="src\features\localization.cpp" />
     <ClCompile Include="src\features\master_server.cpp" />
 <ClCompile Include="src\features\net_speed.cpp" />
     <ClCompile Include="src\features\raw_input.cpp" />
