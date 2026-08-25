@@ -64,6 +64,7 @@
     <ClCompile Include="src\features\fov.cpp" />
     <ClCompile Include="src\features\hit_test.cpp" />
     <ClCompile Include="src\features\master_server.cpp" />
+<ClCompile Include="src\features\net_speed.cpp" />
     <ClCompile Include="src\features\raw_input.cpp" />
     <ClCompile Include="src\features\skip_intro.cpp" />
   </ItemGroup>
