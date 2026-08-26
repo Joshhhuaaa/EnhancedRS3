@@ -1,4 +1,4 @@
-#include "stdafx.h"
+﻿#include "stdafx.h"
 #include "common.hpp"
 #include "config.hpp"
 #include "feature.hpp"
@@ -31,6 +31,7 @@ namespace
     constexpr int IST_Axis    = 4;
 
     SafetyHookInline shUpdateInput{};
+    SafetyHookInline shKeyPressed{};
 
     int (__fastcall* CauseInputEvent)(void*, void*, int, int, float) = nullptr;
 
@@ -56,6 +57,20 @@ namespace
             keys[vk] = bDown ? 0x80 : 0;
             SetKeyboardState(keys);
         }
+    }
+
+    // The Bink playback loop in UGameEngine::DisplayGameVideo polls the DirectInput mouse for its
+    // skip click, and Attach unacquires that device
+    int __fastcall KeyPressed(void* self, void* edx, int bCheckMouse)
+    {
+        if (bCheckMouse)
+        {
+            for (int vk : { VK_LBUTTON, VK_RBUTTON, VK_MBUTTON, VK_XBUTTON1, VK_XBUTTON2 })
+                if (GetAsyncKeyState(vk) & 0x8000)
+                    return 1;
+        }
+
+        return shKeyPressed.thiscall<int>(self, bCheckMouse);
     }
 
     LRESULT CALLBACK RawInputWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -199,6 +214,12 @@ FEATURE(WinDrv, RawInput)
     ppMouse = reinterpret_cast<void**>(GetProcAddress(windrv, "?Mouse@UWindowsViewport@@2PAUIDirectInputDevice8W@@A"));
     if (!ppMouse)
         spdlog::error("RawInput: Mouse export not found, DirectInput mouse left running");
+
+    auto keyPressed = GetProcAddress(windrv, "?KeyPressed@UWindowsViewport@@UAEHH@Z");
+    if (keyPressed)
+        shKeyPressed = safetyhook::create_inline(keyPressed, KeyPressed);
+    else
+        spdlog::error("RawInput: KeyPressed export not found, videos will not skip on click");
 
     shUpdateInput = safetyhook::create_inline(updateInput, UpdateInput);
     spdlog::info("RawInput: mouse axes taken from raw input, one delta per frame, look x{} / menu cursor x{}",
