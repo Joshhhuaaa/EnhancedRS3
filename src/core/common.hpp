@@ -6,6 +6,9 @@ inline std::string sExeName;
 inline std::filesystem::path sAsiPath;
 inline bool bEditor = false;
 
+// Tracks whether the game window currently owns mouse input
+inline bool bInputFocus = false;
+
 void InitPaths();
 
 // Retail and the digital release need different signatures often enough to be worth

@@ -13,7 +13,8 @@ static Config::Float fCursorSensitivity("Input", "CursorSensitivity", 1.0f);
 
 namespace
 {
-    constexpr ptrdiff_t Window = 0x204;  // UWindowsViewport::Window, WWindow::hWnd sits at +4
+    constexpr ptrdiff_t Window   = 0x204;  // UWindowsViewport::Window, WWindow::hWnd sits at +4
+    constexpr ptrdiff_t Captured = 0x220;  // the last SetMouseCapture Capture argument
 
     constexpr int IK_LeftMouse      = 1;
     constexpr int IK_RightMouse     = 2;
@@ -37,6 +38,8 @@ namespace
 
     WNDPROC gameWndProc  = nullptr;
     HWND    hGameWindow  = nullptr;
+
+    bool bFrameClick = false;
 
     void** ppMouse = nullptr;
 
@@ -75,7 +78,21 @@ namespace
 
     LRESULT CALLBACK RawInputWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
     {
-        if (msg == WM_INPUT && GetForegroundWindow() == hGameWindow)
+        switch (msg)
+        {
+        case WM_MOUSEACTIVATE: bFrameClick = LOWORD(lParam) != HTCLIENT; break;
+        case WM_SETFOCUS:      bInputFocus = !bFrameClick; bFrameClick = false; break;
+        case WM_KILLFOCUS:     bInputFocus = false; break;
+        case WM_LBUTTONDOWN:
+        case WM_RBUTTONDOWN:
+        case WM_MBUTTONDOWN:   bInputFocus = true; break;
+        }
+
+        // Ignore game keyboard input until the window has focus
+        if (!bInputFocus && (msg == WM_KEYDOWN || msg == WM_KEYUP || msg == WM_CHAR))
+            return 0;
+
+        if (msg == WM_INPUT && bInputFocus)
         {
             RAWINPUT raw{};
             UINT size = sizeof(raw);
@@ -150,6 +167,7 @@ namespace
         }
 
         bLegacyOff = false;
+        bInputFocus = GetForegroundWindow() == hWnd;
         RegisterRawInput(hWnd, false);
         spdlog::info("RawInput: attached to hwnd {:#x}", reinterpret_cast<uintptr_t>(hWnd));
     }
@@ -163,17 +181,26 @@ namespace
         if (hWnd && hWnd != hGameWindow)
             Attach(hWnd);
 
+        // Keep the cursor visible until the game has focus and the cursor is inside the client area
+        POINT cursor{};
+        RECT client{};
+        GetCursorPos(&cursor);
+        ScreenToClient(hGameWindow, &cursor);
+        GetClientRect(hGameWindow, &client);
+
+        auto bShow = !bInputFocus || !PtInRect(&client, cursor);
+
         CURSORINFO ci{};
         ci.cbSize = sizeof(ci);
-        if (GetCursorInfo(&ci) && (ci.flags & CURSOR_SHOWING))
-            ShowCursor(FALSE);
+        if (GetCursorInfo(&ci) && bShow != ((ci.flags & CURSOR_SHOWING) != 0))
+            ShowCursor(bShow);
 
         shUpdateInput.thiscall<void>(self, reset, deltaSeconds);
 
         bool bInMenu = Script::GetBool(self, L"bShowWindowsMouse");
 
-        // Legacy mouse messages only serve the menus, in gameplay every raw report also costs WM_MOUSEMOVE + WM_NCHITTEST / WM_SETCURSOR
-        bool bNoLegacy = !bInMenu && GetForegroundWindow() == hGameWindow;
+        // Disable legacy mouse messages while the game has capture and the cursor is hidden
+        bool bNoLegacy = *reinterpret_cast<int32_t*>(self + Captured) != 0 && !bShow;
         if (hWnd && bNoLegacy != bLegacyOff)
         {
             bLegacyOff = bNoLegacy;

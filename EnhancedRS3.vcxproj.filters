@@ -57,6 +57,9 @@
     <ClCompile Include="src\features\zoom_ramp.cpp">
       <Filter>features</Filter>
     </ClCompile>
+    <ClCompile Include="src\features\display_mode.cpp">
+      <Filter>features</Filter>
+    </ClCompile>
     <ClCompile Include="external\hooking\Hooking.Patterns.cpp">
       <Filter>external</Filter>
     </ClCompile>
