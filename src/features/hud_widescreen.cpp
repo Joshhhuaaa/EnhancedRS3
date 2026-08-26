@@ -1,11 +1,10 @@
 #include "stdafx.h"
 #include "common.hpp"
-#include "config.hpp"
 #include "feature.hpp"
 #include "script.hpp"
 
-static Config::Value bWidescreenHUD("General", "WidescreenHUD", true);
-static Config::Value bHUDScale("General", "HUDScale", true);
+static constexpr bool bWidescreenHUD = true;    // Prevents the HUD, reticules and scope overlay from stretching on widescreen
+static constexpr float fHUDScale     = 1.0f;    // 0 is the stock native size, 1 matches the 640x480 proportions
 
 namespace
 {
@@ -132,6 +131,7 @@ namespace
     void*     rose = nullptr;
     float     roseScale = 1.0f;
     float     roseOffset = 0.0f;
+    bool      virtualSize = false;
     uintptr_t base  = 0;
     uintptr_t limit = 0;
 
@@ -143,6 +143,7 @@ namespace
     bool  bShift   = false;
     bool  bMeasure = false;
     bool  bWindowText = false;
+    float windowScale = 1.0f;
 
     float Scale(ptrdiff_t offset) { return *reinterpret_cast<float*>(hud + offset); }
 
@@ -363,14 +364,21 @@ namespace
         Method<ClearFn>(device, DeviceClear)(device, 2, strips, ClearTarget, 0xff000000, 1.0f, 0);
     }
 
+    // 0 is the stock native size, 1 matches 640x480 proportions
+    // Derived once because clip widths and wrap thresholds below must match the glyph scale
+    float HUDScale(float sizeY)
+    {
+        return 1.0f + (sizeY / ReticuleHeight - 1.0f) * fHUDScale;
+    }
+
     float ViewportScale(uint8_t* canvas)
     {
         auto viewport = canvas ? *reinterpret_cast<uint8_t**>(canvas + Viewport) : nullptr;
 
-        if (!bHUDScale || !viewport)
+        if (!fHUDScale || !viewport)
             return 1.0f;
 
-        return static_cast<float>(*reinterpret_cast<int32_t*>(viewport + ViewportSizeY)) / ReticuleHeight;
+        return HUDScale(static_cast<float>(*reinterpret_cast<int32_t*>(viewport + ViewportSizeY)));
     }
 
     // Only scale untransformed full-viewport canvases
@@ -378,7 +386,7 @@ namespace
     {
         auto viewport = *reinterpret_cast<uint8_t**>(canvas + Viewport);
 
-        if (!bHUDScale || !viewport)
+        if (!fHUDScale || !viewport)
             return 1.0f;
 
         auto sizeX = static_cast<float>(*reinterpret_cast<int32_t*>(viewport + ViewportSizeX));
@@ -390,7 +398,7 @@ namespace
         if (*reinterpret_cast<float*>(canvas + ClipX) != sizeX || *reinterpret_cast<float*>(canvas + ClipY) != sizeY)
             return 1.0f;
 
-        return sizeY / ReticuleHeight;
+        return HUDScale(sizeY);
     }
 
     // The wrap threshold is Viewport->SizeX against widths measured at native size, so scaled text
@@ -399,10 +407,10 @@ namespace
     {
         auto viewport = *reinterpret_cast<uint8_t**>(ctx.ebp - 0x30);
 
-        if (!bHUDScale || !viewport)
+        if (!fHUDScale || !viewport)
             return;
 
-        auto scale = static_cast<float>(*reinterpret_cast<int32_t*>(viewport + ViewportSizeY)) / ReticuleHeight;
+        auto scale = HUDScale(static_cast<float>(*reinterpret_cast<int32_t*>(viewport + ViewportSizeY)));
 
         if (scale > 1.0f)
             ctx.ecx = static_cast<uintptr_t>(static_cast<int32_t>(static_cast<float>(static_cast<int32_t>(ctx.ecx)) * scale));
@@ -412,14 +420,14 @@ namespace
     // 4:3 clip width so wider viewports don't show extra text.
     void MessageClip(SafetyHookContext& ctx)
     {
-        if (!bHUDScale)
+        if (!fHUDScale)
             return;
 
         // ebx is the viewport
         auto sizeX = static_cast<float>(*reinterpret_cast<int32_t*>(ctx.ebx + ViewportSizeX));
         auto sizeY = static_cast<float>(*reinterpret_cast<int32_t*>(ctx.ebx + ViewportSizeY));
         auto width = sizeY * ReticuleWidth / ReticuleHeight;
-        auto scale = sizeY / ReticuleHeight;
+        auto scale = HUDScale(sizeY);
         auto clip = static_cast<float>(static_cast<int32_t>(ctx.eax));
 
         if (sizeX > width)
@@ -538,37 +546,44 @@ namespace
         bShift = true;
     }
 
-    // The root's other four widgets are the same problem and none has been looked at, so the scale
-    // is claimed only while the instruction widget is the one thing showing.
-    bool InstructionOnly(void* root)
+    // NativeMenu lays these out at GUIScale, keep this list in the same order as WidgetRoot
+    bool WidgetShowing(void* root)
     {
-        static const wchar_t* others[] =
+        static const wchar_t* widgets[] =
         {
             L"m_EscMenuWidget", L"m_DebriefingWidget", L"m_OptionsWidget", L"m_InGameOperativeSelectorWidget"
         };
 
-        if (!Script::GetBool(Script::Get<void*>(root, L"m_pInstructionWidget"), L"bWindowVisible"))
-            return false;
-
-        for (auto name : others)
+        for (auto name : widgets)
             if (Script::GetBool(Script::Get<void*>(root, name), L"bWindowVisible"))
-                return false;
+                return true;
 
-        return true;
+        return false;
     }
 
     // Root.GUIScale threads through the whole box (stable: only re-runs when WinWidth changes)
     float WindowScale(void* object)
     {
-        auto root = Script::Get<void*>(object, L"Root");
+        // WindowConsole declares a Root of its own, and this is reached from two general Canvas
+        // natives, so the caller has to be a window before its root means anything
+        auto root = Script::IsA(object, L"UWindowWindow") ? Script::Get<void*>(object, L"Root") : nullptr;
+
+        // The main menu's scale is NativeMenu's, only the glyphs and measurements follow it here
+        if (Script::IsA(root, L"R6MenuRootWindow"))
+            return Script::Get<float>(root, L"GUIScale", 1.0f);
 
         if (!Script::IsA(root, L"R6MenuInGameRootWindow"))
             return 1.0f;
 
+        // In-game widgets own the scale while visible, the instruction box claims it afterward
+        if (WidgetShowing(root))
+            return Script::Get<float>(root, L"GUIScale", 1.0f);
+
         auto width = Script::Get<float>(root, L"WinWidth");
         auto height = Script::Get<float>(root, L"WinHeight");
-        auto scale = bHUDScale && height >= ReticuleHeight && InstructionOnly(root)
-                   ? height / ReticuleHeight
+        auto scale = fHUDScale && height >= ReticuleHeight
+                  && Script::GetBool(Script::Get<void*>(root, L"m_pInstructionWidget"), L"bWindowVisible")
+                   ? HUDScale(height)
                    : 1.0f;
 
         Script::Set<float>(root, L"GUIScale", scale);
@@ -595,7 +610,8 @@ namespace
         auto stack = *reinterpret_cast<uint8_t**>(ctx.esp + 4);
         auto object = *reinterpret_cast<void**>(stack + 0x8);
 
-        bWindowText = WindowScale(object) != 1.0f;
+        windowScale = WindowScale(object);
+        bWindowText = windowScale != 1.0f;
     }
 
     // TextSize divides its measurement by GUIScale on the assumption the glyphs stayed native
@@ -698,10 +714,11 @@ namespace
 
         bWindowText = false;
 
-        if (!bHUDScale || !viewport || (!engineText && !windowText))
-            return shDrawStringWorker.ccall<int>(canvas, font, x, y, text, r, g, b, a, i1, i2, i3);
+        // UWindow glyphs follow their root's scale, HUDScale only applies to viewport text
+        auto scale = windowText ? windowScale : ViewportScale(canvas);
 
-        auto scale = ViewportScale(canvas);
+        if (!viewport || scale == 1.0f || (!engineText && !windowText))
+            return shDrawStringWorker.ccall<int>(canvas, font, x, y, text, r, g, b, a, i1, i2, i3);
 
         // The worker resolves a glyph as (X + OrgX) * StretchX, so the origin is inside the multiply
         // and comes down with the position. UWindow accumulates screen position into OrgX.
@@ -764,11 +781,14 @@ namespace
 
         shUseVirtualSize.thiscall<void>(self, bUse, x, y);
 
-        if (reticule && bHUDScale && !bUse && viewport)
+        // Which correction applies to the next draw, clip layout or viewport pixels
+        virtualSize = bUse != 0;
+
+        if (reticule && fHUDScale && !bUse && viewport)
         {
             auto sizeX = static_cast<float>(*reinterpret_cast<int32_t*>(viewport + ViewportSizeX));
             auto sizeY = static_cast<float>(*reinterpret_cast<int32_t*>(viewport + ViewportSizeY));
-            auto scale = sizeY / ReticuleHeight;
+            auto scale = HUDScale(sizeY);
 
             // R6WithWeaponReticule never backs its half line width off, so its cross sits down and right
             auto nudgeX = 0.0f;
@@ -801,7 +821,9 @@ namespace
     {
         auto object = *reinterpret_cast<void**>(stack + 0x8);
 
-        rose = Script::IsA(object, L"R6InteractionRoseDesVents") && RoseTransform(static_cast<uint8_t*>(self))
+        // R6InteractionCircumstantialAction extends the rose and uses virtual size for the bottom-center icon
+        // The wheel disables virtual size first, so canvas state distinguishes the two
+        rose = !virtualSize && Script::IsA(object, L"R6InteractionRoseDesVents") && RoseTransform(static_cast<uint8_t*>(self))
              ? object
              : nullptr;
 
@@ -815,7 +837,7 @@ namespace
         auto canvas = static_cast<uint8_t*>(self);
         auto object = *reinterpret_cast<void**>(stack + 0x8);
 
-        if (!Script::IsA(object, L"R6InteractionRoseDesVents") || !RoseTransform(canvas))
+        if (virtualSize || !Script::IsA(object, L"R6InteractionRoseDesVents") || !RoseTransform(canvas))
         {
             shExecDrawText.thiscall<void>(self, stack, result);
             return;

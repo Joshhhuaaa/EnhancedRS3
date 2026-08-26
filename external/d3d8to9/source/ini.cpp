@@ -20,7 +20,7 @@ int Ini::ReadInt(const wchar_t *Key, int Default)
 	wcsncat_s(Path, L"plugins\\EnhancedRS3.ini", _TRUNCATE);
 
 	wchar_t Text[64] = {};
-	if (GetPrivateProfileStringW(L"General", Key, L"", Text, _countof(Text), Path) == 0)
+	if (GetPrivateProfileStringW(L"Graphics", Key, L"", Text, _countof(Text), Path) == 0)
 		return Default;
 
 	// Parse the number before any trailing // comment
