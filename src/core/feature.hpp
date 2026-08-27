@@ -18,6 +18,7 @@ enum class GameModule
     WinDrv,
     Window,
     DareAudio,
+    Eax,
 };
 
 using FeatureFn = void(*)();

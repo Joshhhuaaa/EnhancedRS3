@@ -34,6 +34,7 @@ namespace
         case GameModule::WinDrv:        return L"WinDrv.dll";
         case GameModule::Window:        return L"Window.dll";
         case GameModule::DareAudio:     return L"DareAudio.dll";
+        case GameModule::Eax:           return L"eax.dll";
         default:                        return L"";
         }
     }

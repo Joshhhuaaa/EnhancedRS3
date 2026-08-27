@@ -30,6 +30,9 @@
     <ClCompile Include="src\core\script.cpp">
       <Filter>core</Filter>
     </ClCompile>
+    <ClCompile Include="src\features\eax_dsound.cpp">
+      <Filter>features</Filter>
+    </ClCompile>
     <ClCompile Include="src\features\alt_tab_crash.cpp">
       <Filter>features</Filter>
     </ClCompile>

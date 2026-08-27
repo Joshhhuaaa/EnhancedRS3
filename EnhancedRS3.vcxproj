@@ -62,6 +62,7 @@
     <ClCompile Include="src\dllmain.cpp" />
     <ClCompile Include="src\features\alt_tab_crash.cpp" />
     <ClCompile Include="src\features\display_mode.cpp" />
+    <ClCompile Include="src\features\eax_dsound.cpp" />
     <ClCompile Include="src\features\fov.cpp" />
     <ClCompile Include="src\features\fps_limit.cpp" />
     <ClCompile Include="src\features\hit_test.cpp" />
