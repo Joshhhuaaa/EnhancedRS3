@@ -1,10 +1,14 @@
 #include "stdafx.h"
 #include "common.hpp"
+#include "config.hpp"
 #include "feature.hpp"
 #include "script.hpp"
 
 static constexpr bool bWidescreenHUD = true;    // Prevents the HUD, reticules and scope overlay from stretching on widescreen
 static constexpr float fHUDScale     = 1.0f;    // 0 is the stock native size, 1 matches the 640x480 proportions
+
+static Config::Value bCenterOptics("HUD", "CenterOptics", true);
+static Config::Value nHideCrosshairZoomed("HUD", "HideCrosshairWhenZoomed", 0);
 
 namespace
 {
@@ -128,6 +132,10 @@ namespace
 
     uint8_t*  hud   = nullptr;
     void*     reticule = nullptr;
+    void*     aiming   = nullptr;
+    bool      optics   = false;
+    bool      zoomed   = false;
+    bool      dot      = false;
     void*     rose = nullptr;
     float     roseScale = 1.0f;
     float     roseOffset = 0.0f;
@@ -458,6 +466,21 @@ namespace
             auto width = arg[2];
             auto height = arg[3];
 
+            // Optics passes use a USize - 1 source rect, shifting the texture center by half a texel
+            // Device vignettes use a separate call site and are left unchanged
+            if (bCenterOptics && !device)
+            {
+                arg[6] += 1.0f;
+                arg[7] += 1.0f;
+                arg[0] -= 0.5f;
+                arg[1] -= 0.5f;
+                arg[2] -= 0.5f;
+                arg[3] -= 0.5f;
+            }
+
+            // Any reticle drawn later this frame is inside the optic
+            optics = optics || !device;
+
             ConfineTo43(arg);
 
             // Once per mode is enough, and the mask is the first of its pair.
@@ -469,11 +492,26 @@ namespace
     void DrawTileRotated(SafetyHookContext& ctx)
     {
         auto ret = *reinterpret_cast<uintptr_t*>(ctx.esp);
+        auto arg = reinterpret_cast<float*>(ctx.esp + 4);
+
+        // Canvas.DrawRect and DrawIcon reach here through UCanvas::DrawTile, not FCanvasUtil::DrawTile
+        if (aiming)
+        {
+            // R6WithWeaponReticule draws its center dot as the one square rect, the four accuracy
+            // ticks are always long in one axis. A collapsed rect draws nothing
+            if (zoomed && (nHideCrosshairZoomed == 2 ||
+                (nHideCrosshairZoomed == 1 && dot && arg[2] - arg[0] == arg[3] - arg[1])))
+            {
+                arg[2] = arg[0];
+                arg[3] = arg[1];
+                return;
+            }
+        }
 
         if (rose)
-            Rose(reinterpret_cast<float*>(ctx.esp + 4));
+            Rose(arg);
         else if (Gated(ret))
-            Correct(reinterpret_cast<float*>(ctx.esp + 4), World);
+            Correct(arg, World);
     }
 
     // Waypoint coordinates are projected pixels; undo the canvas Y scale before drawing
@@ -783,6 +821,20 @@ namespace
 
         // Which correction applies to the next draw, clip layout or viewport pixels
         virtualSize = bUse != 0;
+
+        // R6Weapons.PostRender draws the identification reticle with UseVirtualSize(true).
+        // Only the reticle's UseVirtualSize(false) draw is transformed; its identification text is left alone.
+        if (reticule && !bUse)
+        {
+            aiming = reticule;
+            zoomed = optics;
+            dot = Script::IsA(reticule, L"R6WithWeaponReticule");
+            optics = false;
+        }
+        else if (!reticule)
+        {
+            aiming = nullptr;
+        }
 
         if (reticule && fHUDScale && !bUse && viewport)
         {
