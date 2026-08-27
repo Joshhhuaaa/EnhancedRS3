@@ -84,6 +84,11 @@ void* Script::Field(void* object, const wchar_t* name)
     return prop ? static_cast<uint8_t*>(object) + Read<uint16_t>(prop, kPropertyOffset) : nullptr;
 }
 
+void* Script::Declaration(void* object, const wchar_t* name)
+{
+    return FindProperty(object, name);
+}
+
 bool Script::GetBool(void* object, const wchar_t* name, bool fallback)
 {
     void* prop = FindProperty(object, name);

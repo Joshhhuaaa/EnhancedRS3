@@ -56,6 +56,9 @@ namespace
     constexpr ptrdiff_t WindowsMouseX = 0x40;
     constexpr ptrdiff_t WindowsMouseY = 0x44;
 
+    // UStruct::Script, the compiled bytecode - the offset UStruct::SerializeExpr works through
+    constexpr ptrdiff_t Code = 0x4c;
+
     // UGameEngine / UClient
     constexpr ptrdiff_t Client    = 0x44;
     constexpr ptrdiff_t Viewports = 0x30;
@@ -133,6 +136,7 @@ namespace
     bool  bWidget = false;
     bool  bDebrief = false;
     bool  bProgress = false;
+    bool  bFreed    = false;
 
     // execGetClickResult zooms about these instead of its 320,240 - see the R6Game feature
     float centerX = 320.0f;
@@ -253,13 +257,6 @@ namespace
             Script::Set<float>(child, L"WinLeft", left);
             Script::Set<float>(child, L"WinTop", top);
         }
-
-        // The in-game mouse uses viewport pixels, while window hit-testing uses root units.
-        // GUIScale 1 keeps them in the same coordinate space.
-        auto console = *reinterpret_cast<void**>(viewport + Console);
-
-        Script::Set<float>(console, L"MouseX", std::clamp(Script::Get<float>(console, L"MouseX"), 0.0f, Size(viewport, SizeX) / scale));
-        Script::Set<float>(console, L"MouseY", std::clamp(Script::Get<float>(console, L"MouseY"), 0.0f, Size(viewport, SizeY) / scale));
     }
 
     // m_bScaleWindowToRoot makes this root handle its own 640x480 scaling and mouse conversion.
@@ -319,6 +316,44 @@ namespace
         std::copy(rect, rect + 4, lastRect);
     }
 
+    // WindowConsole.RenderUWindow clamps MouseX and MouseY to 0, which prevents the cursor from
+    // reaching the letterbox. Remove the clamps while preserving the existing jump target.
+    void FreeCursor(void* console)
+    {
+        if (bFreed)
+            return;
+
+        auto render = static_cast<uint8_t*>(Script::Declaration(console, L"RenderUWindow"));
+
+        if (!render)
+            return;
+
+        auto code = *reinterpret_cast<uint8_t**>(render + Code);
+        auto size = code ? *reinterpret_cast<int32_t*>(render + Code + 4) : 0;
+        auto found = 0;
+
+        for (auto i = 0; i + 24 <= size; ++i)
+        {
+            auto guard = code + i;
+
+            if (guard[0] == 0x07 && guard[3] == 0xb0 && guard[4] == 0x01 && guard[9] == 0x39 &&
+                guard[10] == 0x3f && guard[11] == 0x25 && guard[12] == 0x16 && guard[13] == 0x0f &&
+                guard[14] == 0x01 && guard[19] == 0x1e && std::equal(guard + 5, guard + 9, guard + 15) &&
+                !*reinterpret_cast<uint32_t*>(guard + 20))
+            {
+                guard[0] = 0x06;
+                ++found;
+            }
+        }
+
+        bFreed = true;
+
+        if (found == 2)
+            spdlog::info("NativeMenu: the menu cursor reaches the viewport edge");
+        else
+            spdlog::error("NativeMenu: {} of 2 MouseX/MouseY floors found in WindowConsole.RenderUWindow, the menu cursor stops at the 4:3 box", found);
+    }
+
     void __fastcall Draw(void* self, void* edx, uint8_t* viewport, int blit, uint8_t* hitData, int* hitSize)
     {
         Measure(viewport);
@@ -347,6 +382,17 @@ namespace
             FitMultiPlayer(multiPlayer, viewport);
         }
 
+        // With RenderUWindow's own floor gone both limits are set here, one frame behind the
+        // accumulator. The shell lays out in the 4:3 box, so the viewport starts behind its origin.
+        auto console = *reinterpret_cast<void**>(viewport + Console);
+        auto units = root || inGame ? scale : 1.0f;
+        auto lowX = root ? -offsetX / scale : 0.0f;
+        auto lowY = root ? -offsetY / scale : 0.0f;
+
+        FreeCursor(console);
+        Script::Set<float>(console, L"MouseX", std::clamp(Script::Get<float>(console, L"MouseX"), lowX, lowX + Size(viewport, SizeX) / units));
+        Script::Set<float>(console, L"MouseY", std::clamp(Script::Get<float>(console, L"MouseY"), lowY, lowY + Size(viewport, SizeY) / units));
+
         // Draw leaves the letterboxed origin in place, so restore it after drawing.
         auto canvas = *reinterpret_cast<uint8_t**>(viewport + Canvas);
         auto orgX = *reinterpret_cast<float*>(canvas + OrgX);
@@ -362,8 +408,6 @@ namespace
         else if (bWidget)
         {
             // RenderUWindow resets MouseScale each frame, so adjust it after rendering.
-            auto console = *reinterpret_cast<void**>(viewport + Console);
-
             Script::Set<float>(console, L"MouseScale", Script::Get<float>(console, L"MouseScale") / scale);
         }
     }
@@ -438,17 +482,19 @@ namespace
         *reinterpret_cast<float*>(canvas + OrgY) = offsetY;
     }
 
-    // edx is the viewport. Keep the OS cursor inside the 4:3 box where the script expects it.
+    // edx is the viewport. Offset the OS cursor onto the 4:3 box the script lays out in, which
+    // leaves it negative over the left and top bars, the same range Draw bounds the accumulator to.
     void MouseStoredCheck(SafetyHookContext& ctx)
     {
         if (!bMenu)
             return;
 
-        auto x = reinterpret_cast<float*>(ctx.edx + WindowsMouseX);
-        auto y = reinterpret_cast<float*>(ctx.edx + WindowsMouseY);
+        auto viewport = reinterpret_cast<uint8_t*>(ctx.edx);
+        auto x = reinterpret_cast<float*>(viewport + WindowsMouseX);
+        auto y = reinterpret_cast<float*>(viewport + WindowsMouseY);
 
-        *x = std::clamp(*x - offsetX, 0.0f, DesignWidth * scale);
-        *y = std::clamp(*y - offsetY, 0.0f, DesignHeight * scale);
+        *x = std::clamp(*x, 0.0f, static_cast<float>(Size(viewport, SizeX))) - offsetX;
+        *y = std::clamp(*y, 0.0f, static_cast<float>(Size(viewport, SizeY))) - offsetY;
     }
 
     // INDEX_NONE resolves to Client->FullscreenViewportX/Y, which stock leaves at the menu's 640x480.
@@ -711,8 +757,8 @@ namespace
 
     // UCanvas::DrawTile and the text worker both resolve a point as (Org + Cur) * Stretch, so a
     // native the script hands 640x480 units is scaled by stretching it, after bringing back down
-    // whatever the script already put in pixels. The cursor also loses its clip to the 4:3 box:
-    // DrawTileClipped clamps XL to ClipX - CurX with no sign check, which is the line past the edge.
+    // whatever the script already put in pixels. The cursor trims against Cur rather than the point
+    // it resolves to, so it carries the letterbox itself and keeps the clip the script asked for.
     enum class Placed { Units, Pixels, Cursor }; // Pixels: the script already multiplied by GUIScale before calling the native
 
     template<typename Fn>
@@ -724,27 +770,35 @@ namespace
         float orgX = at(OrgX), orgY = at(OrgY), clipX = at(ClipX), clipY = at(ClipY);
         float curX = at(CurX), curY = at(CurY), stretchX = at(StretchX), stretchY = at(StretchY);
 
+        // DrawTileClipped clips against CurX, so include the letterbox offset for the cursor.
+        auto foldX = placed == Placed::Cursor ? orgX : 0.0f;
+        auto foldY = placed == Placed::Cursor ? orgY : 0.0f;
+
+        // R6MenuRootWindow.DrawMouse clips the cursor at its GUIScale-adjusted edge.
+        // The stock 640x480 edge widens to the viewport while widget-specific clipping stays unchanged.
+        auto edgeX = clipX > (DesignWidth - 1.0f) * s ? static_cast<float>(Size(viewport, SizeX)) : foldX + clipX;
+        auto edgeY = clipY > (DesignHeight - 1.0f) * s ? static_cast<float>(Size(viewport, SizeY)) : foldY + clipY;
+
         at(StretchX) = s;
         at(StretchY) = s;
-        at(OrgX) = orgX / s;
-        at(OrgY) = orgY / s;
-        // ClipTextWidth (UWindowWindow.uc:1621) forgets GUIScale on its width, so a Pixels clip is
-        // still in units across; the 4:3 box the cursor is clipped to becomes the whole viewport.
-        at(ClipX) = placed == Placed::Cursor ? Size(viewport, SizeX) / s : placed == Placed::Pixels ? clipX : clipX / s;
-        at(ClipY) = placed == Placed::Cursor ? Size(viewport, SizeY) / s : clipY / s;
+        at(OrgX) = (orgX - foldX) / s;
+        at(OrgY) = (orgY - foldY) / s;
+        // ClipTextWidth forgets GUIScale on its width, so pixel clips are still in window units.
+        at(ClipX) = placed == Placed::Cursor ? edgeX / s : placed == Placed::Pixels ? clipX : clipX / s;
+        at(ClipY) = placed == Placed::Cursor ? edgeY / s : clipY / s;
 
         if (placed != Placed::Units)
         {
-            at(CurX) = curX / s;
-            at(CurY) = curY / s;
+            at(CurX) = (curX + foldX) / s;
+            at(CurY) = (curY + foldY) / s;
         }
 
         call();
 
         if (placed != Placed::Units)
         {
-            at(CurX) *= s;
-            at(CurY) *= s;
+            at(CurX) = at(CurX) * s - foldX;
+            at(CurY) = at(CurY) * s - foldY;
         }
 
         at(StretchX) = stretchX;

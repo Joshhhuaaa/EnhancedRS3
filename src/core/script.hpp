@@ -10,6 +10,9 @@ namespace Script
     // has no field by that name. Names a var, not a function.
     void* Field(void* object, const wchar_t* name);
 
+    // The declaration itself rather than its storage, so this also reaches functions and states.
+    void* Declaration(void* object, const wchar_t* name);
+
     template<typename T>
     T Get(void* object, const wchar_t* name, T fallback = T{})
     {
