@@ -405,10 +405,11 @@ namespace
             *reinterpret_cast<float*>(canvas + OrgX) = orgX;
             *reinterpret_cast<float*>(canvas + OrgY) = orgY;
         }
-        else if (bWidget)
+        else if (multiPlayer && Script::GetBool(multiPlayer, L"m_bScaleWindowToRoot"))
         {
-            // RenderUWindow resets MouseScale each frame, so adjust it after rendering.
-            Script::Set<float>(console, L"MouseScale", Script::Get<float>(console, L"MouseScale") / scale);
+            // This root converts during hit testing, so MouseX stays in viewport pixels and the scale belongs in
+            // MouseScale. RenderUWindow rebuilds MouseScale from the sensitivity every frame, so set it after stock.
+            Script::Set<float>(console, L"MouseScale", Script::Get<float>(console, L"MouseScale") * scale);
         }
     }
 
