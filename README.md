@@ -2,8 +2,6 @@
 
 A major patch for Rainbow Six 3, fixing bugs and adding gameplay improvements.
 
-For a full list of patch notes, refer to the [Patch Notes](PatchNotes.md) page.
-
 If you'd like to donate, all contributions are appreciated.
 <div align="left">
   <a href="https://www.paypal.com/donate/?hosted_button_id=UB67N4GNTCEZ6">
