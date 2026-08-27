@@ -568,7 +568,9 @@ namespace
         if (!BinkWait(bink))
         {
             BinkDoFrame(bink);
-            if (handle || bink->FrameNum != bink->Frames)
+            // Canvas->m_pBink is used at every call site, so stock's guard never preserves the last frame
+            // DisplayGameVideo's loop must handle it instead, or the fade replays the video
+            if (inScene || bink->FrameNum != bink->Frames)
                 BinkNextFrame(bink);
         }
 
