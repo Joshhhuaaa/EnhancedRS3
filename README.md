@@ -82,6 +82,9 @@ Enables SMAA to smooth jagged edges.
   </table>
 </div>
 
+### EAX Audio Support
+Allows local DirectSound wrappers such as ALchemy and [DSOAL](https://github.com/kcat/dsoal) to load correctly, enabling EAX audio without requiring a registry change. DSOAL is included with the patch.
+
 ### Center Optics
 Some optics are slightly misaligned with the center crosshair in the stock game. Corrects their position to better align them with the center of the screen.
 
