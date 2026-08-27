@@ -245,19 +245,21 @@ namespace
 
     // Confining leaves the strips showing world, so they are filled with black tiles through the
     // same primitive. These re-enter the hook and pass through: the return address is in this dll.
-    void FillOutside(void* util, float* arg, float width, float height)
+    // The source rect is degenerate, so the strip uses the overlay's corner texel extended outward.
+    // White leaves that texel unchanged, which excludes ADS overlays that are not fullscreen.
+    void FillOutside(void* util, float* arg, float width, float height, uint32_t tint)
     {
         auto material = reinterpret_cast<void**>(arg)[9];
 
         if (arg[0] > 0.0f)
         {
-            drawTilePrimitive(util, nullptr, 0.0f, 0.0f, arg[0], height, 0.0f, 0.0f, 0.0f, 0.0f, arg[8], material, 0xff000000);
-            drawTilePrimitive(util, nullptr, arg[2], 0.0f, width, height, 0.0f, 0.0f, 0.0f, 0.0f, arg[8], material, 0xff000000);
+            drawTilePrimitive(util, nullptr, 0.0f, 0.0f, arg[0], height, 0.0f, 0.0f, 0.0f, 0.0f, arg[8], material, tint);
+            drawTilePrimitive(util, nullptr, arg[2], 0.0f, width, height, 0.0f, 0.0f, 0.0f, 0.0f, arg[8], material, tint);
         }
         else if (arg[1] > 0.0f)
         {
-            drawTilePrimitive(util, nullptr, 0.0f, 0.0f, width, arg[1], 0.0f, 0.0f, 0.0f, 0.0f, arg[8], material, 0xff000000);
-            drawTilePrimitive(util, nullptr, 0.0f, arg[3], width, height, 0.0f, 0.0f, 0.0f, 0.0f, arg[8], material, 0xff000000);
+            drawTilePrimitive(util, nullptr, 0.0f, 0.0f, width, arg[1], 0.0f, 0.0f, 0.0f, 0.0f, arg[8], material, tint);
+            drawTilePrimitive(util, nullptr, 0.0f, arg[3], width, height, 0.0f, 0.0f, 0.0f, 0.0f, arg[8], material, tint);
         }
     }
 
@@ -485,7 +487,7 @@ namespace
 
             // Once per mode is enough, and the mask is the first of its pair.
             if (device || rva == ScopeMask || rva == ThermalMask)
-                FillOutside(reinterpret_cast<void*>(ctx.ecx), arg, width, height);
+                FillOutside(reinterpret_cast<void*>(ctx.ecx), arg, width, height, device ? 0xff000000 : 0xffffffff);
         }
     }
 
