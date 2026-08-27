@@ -1,9 +1,12 @@
 ﻿#include "stdafx.h"
 #include "common.hpp"
+#include "config.hpp"
 #include "feature.hpp"
 #include "script.hpp"
 
 #include <d3d9.h>
+
+static Config::Value bStretchMenus("Graphics", "StretchMenus", false);
 
 namespace
 {
@@ -45,6 +48,7 @@ namespace
     // Engine.dll - inside UGameEngine::Draw
     constexpr uintptr_t ResRequest  = 0xae390;   // reads Canvas->m_bChangeResRequested
     constexpr uintptr_t BeforeMenus = 0xaca1f;   // level rendered, UWindow not yet painted
+    constexpr uintptr_t AfterMenus  = 0xaca2f;   // UWindow painted, the join both branches reach
 
     // Engine.dll - UGameEngine::PaintProgress lays the loading screen out in viewport pixels
     constexpr uintptr_t ProgressFrom     = 0xa1d60;
@@ -111,6 +115,7 @@ namespace
     SafetyHookMid    mhProgressTile{};
     SafetyHookMid    mhResRequest{};
     SafetyHookMid    mhBeforeMenus{};
+    SafetyHookMid    mhAfterMenus{};
     SafetyHookMid    mhClickResult{};
     SafetyHookMid    mhXYPoint{};
 
@@ -129,9 +134,12 @@ namespace
 
     // The frame's mapping from 640x480 to the screen, and which root is up. bWidget is the scale
     // gate; bDebrief is the one widget behind which the level is not being rendered.
+    // fillX/Y are the non-uniform part, carried by the canvas projection rather than the layout
     float scale   = 1.0f;
     float offsetX = 0.0f;
     float offsetY = 0.0f;
+    float fillX   = 1.0f;
+    float fillY   = 1.0f;
     bool  bMenu   = false;
     bool  bWidget = false;
     bool  bDebrief = false;
@@ -143,6 +151,10 @@ namespace
     float centerY = 240.0f;
 
     int32_t lastRect[4] = {};
+
+    // Viewport->SizeX/SizeY while the UWindow paint has them narrowed, and the sizes to put back
+    int32_t* narrowed = nullptr;
+    int32_t  fullSize[2] = {};
 
     template<typename Fn>
     Fn Method(void* object, ptrdiff_t slot)
@@ -164,7 +176,9 @@ namespace
         return x > 0 && y > 0;
     }
 
-    void Measure(uint8_t* viewport)
+    // stretch trades the letterbox for a non-uniform canvas projection: the layout still runs at the
+    // uniform scale, into a box the projection then widens to the viewport, so nothing below changes.
+    void Measure(uint8_t* viewport, bool stretch)
     {
         auto sizeX = static_cast<float>(Size(viewport, SizeX));
         auto sizeY = static_cast<float>(Size(viewport, SizeY));
@@ -173,8 +187,10 @@ namespace
             return;
 
         scale   = std::min(sizeX / DesignWidth, sizeY / DesignHeight);
-        offsetX = (sizeX - DesignWidth * scale) * 0.5f;
-        offsetY = (sizeY - DesignHeight * scale) * 0.5f;
+        fillX   = stretch ? sizeX / (DesignWidth * scale) : 1.0f;
+        fillY   = stretch ? sizeY / (DesignHeight * scale) : 1.0f;
+        offsetX = (sizeX / fillX - DesignWidth * scale) * 0.5f;
+        offsetY = (sizeY / fillY - DesignHeight * scale) * 0.5f;
         centerX = sizeX * 0.5f;
         centerY = sizeY * 0.5f;
     }
@@ -295,8 +311,8 @@ namespace
     {
         Script::Set<float>(root, L"GUIScale", scale);
 
-        auto left = (Size(viewport, SizeX) / scale - DesignWidth) * 0.5f;
-        auto top = (Size(viewport, SizeY) / scale - DesignHeight) * 0.5f;
+        auto left = (Size(viewport, SizeX) / (scale * fillX) - DesignWidth) * 0.5f;
+        auto top = (Size(viewport, SizeY) / (scale * fillY) - DesignHeight) * 0.5f;
 
         for (auto child = Script::Get<void*>(root, L"FirstChildWindow"); child; child = Script::Get<void*>(child, L"NextSiblingWindow"))
         {
@@ -359,10 +375,10 @@ namespace
         if (!actor || std::equal(rect, rect + 4, lastRect))
             return;
 
-        rect[0] = static_cast<int32_t>(offsetX + rect[0] * scale);
-        rect[1] = static_cast<int32_t>(offsetY + rect[1] * scale);
-        rect[2] = static_cast<int32_t>(rect[2] * scale);
-        rect[3] = static_cast<int32_t>(rect[3] * scale);
+        rect[0] = static_cast<int32_t>((offsetX + rect[0] * scale) * fillX);
+        rect[1] = static_cast<int32_t>((offsetY + rect[1] * scale) * fillY);
+        rect[2] = static_cast<int32_t>(rect[2] * scale * fillX);
+        rect[3] = static_cast<int32_t>(rect[3] * scale * fillY);
         std::copy(rect, rect + 4, lastRect);
     }
 
@@ -406,8 +422,6 @@ namespace
 
     void __fastcall Draw(void* self, void* edx, uint8_t* viewport, int blit, uint8_t* hitData, int* hitSize)
     {
-        Measure(viewport);
-
         auto root = ShellRoot(viewport);
         auto inGame = root ? nullptr : WidgetRoot(viewport);
         auto multiPlayer = root || inGame ? nullptr : MultiPlayerRoot(viewport);
@@ -417,6 +431,9 @@ namespace
 
         // R6MenuDebriefingWidget suppresses the level render, other in-game widgets draw over the live game
         bDebrief = bWidget && Script::GetBool(Script::Get<void*>(inGame, L"m_DebriefingWidget"), L"bWindowVisible");
+
+        // Only the shell and the debriefing stretch, the escape menu and its siblings stay 4:3
+        Measure(viewport, bStretchMenus && (bMenu || bDebrief));
 
         if (root)
         {
@@ -436,13 +453,14 @@ namespace
         // With RenderUWindow's own floor gone both limits are set here, one frame behind the
         // accumulator. The shell lays out in the 4:3 box, so the viewport starts behind its origin.
         auto console = *reinterpret_cast<void**>(viewport + Console);
-        auto units = root || inGame ? scale : 1.0f;
+        auto unitsX = root || inGame ? scale * fillX : 1.0f;
+        auto unitsY = root || inGame ? scale * fillY : 1.0f;
         auto lowX = root ? -offsetX / scale : 0.0f;
         auto lowY = root ? -offsetY / scale : 0.0f;
 
         FreeCursor(console);
-        Script::Set<float>(console, L"MouseX", std::clamp(Script::Get<float>(console, L"MouseX"), lowX, lowX + Size(viewport, SizeX) / units));
-        Script::Set<float>(console, L"MouseY", std::clamp(Script::Get<float>(console, L"MouseY"), lowY, lowY + Size(viewport, SizeY) / units));
+        Script::Set<float>(console, L"MouseX", std::clamp(Script::Get<float>(console, L"MouseX"), lowX, lowX + Size(viewport, SizeX) / unitsX));
+        Script::Set<float>(console, L"MouseY", std::clamp(Script::Get<float>(console, L"MouseY"), lowY, lowY + Size(viewport, SizeY) / unitsY));
 
         // Draw leaves the letterboxed origin in place, so restore it after drawing.
         auto canvas = *reinterpret_cast<uint8_t**>(viewport + Canvas);
@@ -496,6 +514,24 @@ namespace
             return;
 
         auto viewport = reinterpret_cast<uint8_t*>(ctx.ebx);
+
+        // FCanvasUtil rebuilds its canvas-to-screen matrix from Viewport->SizeX/SizeY on every canvas call,
+        // so narrowing them to the 4:3 box makes the UWindow layout stretch to the screen automatically.
+        // Measure leaves no offsets, keeping the letterbox strips empty. Write the box directly so a nested
+        // Draw cannot narrow an already narrowed viewport.
+        auto size = reinterpret_cast<int32_t*>(viewport + SizeX);
+        auto boxX = static_cast<int32_t>(DesignWidth * scale);
+        auto boxY = static_cast<int32_t>(DesignHeight * scale);
+
+        if ((fillX != 1.0f || fillY != 1.0f) && (size[0] != boxX || size[1] != boxY))
+        {
+            narrowed = size;
+            fullSize[0] = size[0];
+            fullSize[1] = size[1];
+            size[0] = boxX;
+            size[1] = boxY;
+        }
+
         auto renDev = *reinterpret_cast<uint8_t**>(viewport + RenDev);
         auto d3d = renDev ? *reinterpret_cast<void**>(renDev + Direct3DDevice8) : nullptr;
 
@@ -534,6 +570,17 @@ namespace
         *reinterpret_cast<float*>(canvas + OrgY) = offsetY;
     }
 
+    // The narrowed size must not outlive the paint because the HUD, the next lock, and the mouse all read it
+    void RestoreSize(SafetyHookContext&)
+    {
+        if (!narrowed)
+            return;
+
+        narrowed[0] = fullSize[0];
+        narrowed[1] = fullSize[1];
+        narrowed = nullptr;
+    }
+
     // edx is the viewport. Offset the OS cursor onto the 4:3 box the script lays out in, which
     // leaves it negative over the left and top bars, the same range Draw bounds the accumulator to.
     void MouseStoredCheck(SafetyHookContext& ctx)
@@ -545,8 +592,8 @@ namespace
         auto x = reinterpret_cast<float*>(viewport + WindowsMouseX);
         auto y = reinterpret_cast<float*>(viewport + WindowsMouseY);
 
-        *x = std::clamp(*x, 0.0f, static_cast<float>(Size(viewport, SizeX))) - offsetX;
-        *y = std::clamp(*y, 0.0f, static_cast<float>(Size(viewport, SizeY))) - offsetY;
+        *x = std::clamp(*x, 0.0f, static_cast<float>(Size(viewport, SizeX))) / fillX - offsetX;
+        *y = std::clamp(*y, 0.0f, static_cast<float>(Size(viewport, SizeY))) / fillY - offsetY;
     }
 
     // INDEX_NONE resolves to Client->FullscreenViewportX/Y, which stock leaves at the menu's 640x480.
@@ -650,7 +697,7 @@ namespace
             // The logos and intros run their own frame loop with nothing else drawn, so the scale is
             // taken here rather than from Draw, and the strips are cleared here too.
             if (!bProgress)
-                Measure(viewport);
+                Measure(viewport, inScene && bStretchMenus);
 
             auto width = copyW / (mode >= BinkScale2XW ? 2u : 1u) * scale;
             auto height = copyH / (mode >= BinkScale2XH && mode != BinkScale2XW ? 2u : 1u) * scale;
@@ -663,14 +710,18 @@ namespace
                 auto posX = static_cast<float>(*reinterpret_cast<int32_t*>(canvas + PosX));
                 auto posY = static_cast<float>(*reinterpret_cast<int32_t*>(canvas + PosY));
 
-                x = offsetX + (posX + copyW * 0.5f) * DesignWidth / Size(viewport, SizeX) * scale - width * 0.5f;
-                y = offsetY + (posY + copyH * 0.5f) * DesignHeight / Size(viewport, SizeY) * scale - height * 0.5f;
+                width *= fillX;
+                height *= fillY;
+                x = (offsetX + (posX + copyW * 0.5f) * DesignWidth / Size(viewport, SizeX) * scale) * fillX - width * 0.5f;
+                y = (offsetY + (posY + copyH * 0.5f) * DesignHeight / Size(viewport, SizeY) * scale) * fillY - height * 0.5f;
             }
             else if (inScene)
             {
                // R6MenuVideo.Paint positions the briefing frame in 640x480 units, those units scale
-                x = offsetX + *reinterpret_cast<int32_t*>(canvas + PosX) * scale;
-                y = offsetY + *reinterpret_cast<int32_t*>(canvas + PosY) * scale;
+                x = (offsetX + *reinterpret_cast<int32_t*>(canvas + PosX) * scale) * fillX;
+                y = (offsetY + *reinterpret_cast<int32_t*>(canvas + PosY) * scale) * fillY;
+                width *= fillX;
+                height *= fillY;
             }
             else
             {
@@ -708,14 +759,17 @@ namespace
         shExit.thiscall<void>(self, viewport);
     }
 
-    // The planning widget passes mouse coordinates relative to itself; add the letterbox offset.
+    // The planning widget passes mouse coordinates relative to itself, bring them to viewport pixels.
     void ClickResultArgs(SafetyHookContext& ctx)
     {
         if (!bMenu)
             return;
 
-        *reinterpret_cast<float*>(ctx.ebp - 0x24) += offsetX;
-        *reinterpret_cast<float*>(ctx.ebp + 0x8) += offsetY;
+        auto& x = *reinterpret_cast<float*>(ctx.ebp - 0x24);
+        auto& y = *reinterpret_cast<float*>(ctx.ebp + 0x8);
+
+        x = (x + offsetX) * fillX;
+        y = (y + offsetY) * fillY;
     }
 
     void XYPointArgs(SafetyHookContext& ctx)
@@ -723,11 +777,14 @@ namespace
         if (!bMenu)
             return;
 
-        *reinterpret_cast<float*>(ctx.ebp - 0x18) += offsetX;
-        *reinterpret_cast<float*>(ctx.ebp + 0x8) += offsetY;
+        auto& x = *reinterpret_cast<float*>(ctx.ebp - 0x18);
+        auto& y = *reinterpret_cast<float*>(ctx.ebp + 0x8);
+
+        x = (x + offsetX) * fillX;
+        y = (y + offsetY) * fillY;
     }
 
-    // The loading screen lays out in viewport pixels, bring its background, text, and logo into the 4:3 box.
+    // The loading screen lays out in viewport pixels, bring its background, text, and logo into the box.
     void __fastcall PaintProgress(uint8_t* self, void* edx, void* url)
     {
         auto client = *reinterpret_cast<uint8_t**>(self + Client);
@@ -742,17 +799,20 @@ namespace
             return;
         }
 
-        Measure(viewport);
+        Measure(viewport, bStretchMenus);
 
         auto at = [canvas](ptrdiff_t offset) -> float& { return *reinterpret_cast<float*>(canvas + offset); };
         float orgX = at(OrgX), orgY = at(OrgY), clipX = at(ClipX), clipY = at(ClipY), stretchX = at(StretchX), stretchY = at(StretchY);
 
-        at(StretchX) = scale;
-        at(StretchY) = scale;
-        at(OrgX) = offsetX / scale;
-        at(OrgY) = offsetY / scale;
-        at(ClipX) = Size(viewport, SizeX) / scale;
-        at(ClipY) = Size(viewport, SizeY) / scale;
+        // PaintProgress locks the device itself, so Letterbox cannot narrow the D3D viewport here.
+        // Instead, the canvas stretch maps the loading screen into the 4:3 box, with ProgressTile and
+        // DisplayVideo carrying the offset for the two pieces that bypass the canvas.
+        at(StretchX) = scale * fillX;
+        at(StretchY) = scale * fillY;
+        at(OrgX) = offsetX / (scale * fillX);
+        at(OrgY) = offsetY / (scale * fillY);
+        at(ClipX) = Size(viewport, SizeX) / (scale * fillX);
+        at(ClipY) = Size(viewport, SizeY) / (scale * fillY);
 
         bProgress = true;
         shPaintProgress.thiscall<void>(self, url);
@@ -782,8 +842,8 @@ namespace
             return;
 
         // PaintProgress resets the canvas between the video and text, so restore the 4:3 origin here
-        *reinterpret_cast<float*>(canvas + OrgX) = offsetX / scale;
-        *reinterpret_cast<float*>(canvas + OrgY) = offsetY / scale;
+        *reinterpret_cast<float*>(canvas + OrgX) = offsetX / (scale * fillX);
+        *reinterpret_cast<float*>(canvas + OrgY) = offsetY / (scale * fillY);
 
         *x -= (Size(viewport, SizeX) - static_cast<int32_t>(DesignWidth)) / 2;
         *y = static_cast<int32_t>(*y * DesignHeight / Size(viewport, SizeY));
@@ -800,8 +860,8 @@ namespace
 
         auto arg = reinterpret_cast<float*>(ctx.esp + 4);
         auto viewport = *reinterpret_cast<uint8_t**>(ctx.ecx + 0xca4);
-        auto kx = DesignWidth * scale / Size(viewport, SizeX);
-        auto ky = DesignHeight * scale / Size(viewport, SizeY);
+        auto kx = DesignWidth * scale * fillX / Size(viewport, SizeX);
+        auto ky = DesignHeight * scale * fillY / Size(viewport, SizeY);
 
         arg[0] = offsetX + arg[0] * kx;
         arg[1] = offsetY + arg[1] * ky;
@@ -963,7 +1023,8 @@ FEATURE(Engine, NativeMenu)
     mhProgressTile = safetyhook::create_mid(tile, ProgressTile);
     mhResRequest = safetyhook::create_mid(reinterpret_cast<void*>(engineBase + ResRequest), ResRequestCheck);
     mhBeforeMenus = safetyhook::create_mid(reinterpret_cast<void*>(engineBase + BeforeMenus), Letterbox);
-    spdlog::info("NativeMenu: menus run at the game resolution, scaled to fit");
+    mhAfterMenus = safetyhook::create_mid(reinterpret_cast<void*>(engineBase + AfterMenus), RestoreSize);
+    spdlog::info("NativeMenu: menus run at the game resolution, {}", bStretchMenus ? "stretched to fill" : "scaled to fit");
 }
 
 FEATURE(WinDrv, NativeMenuBoot)
