@@ -238,6 +238,56 @@ namespace
         Script::Set<float>(console, L"OldClipY", sizeY);
     }
 
+    // R6PlanningCtrl receives pixel coordinates for the click natives and passes them to
+    // DisplayActionTypePopUp, which places the window in root units. Stock only agrees because
+    // GUIScale is 1, so the popup is repositioned here when it opens.
+    void FitPlanningPopup(void* root, uint8_t* viewport)
+    {
+        static const wchar_t* popups[][2] =
+        {
+            { L"m_bPopUpMenuPoint", L"m_PopUpMenuPoint" },
+            { L"m_bPopUpMenuSpeed", L"m_PopUpMenuMode"  }
+        };
+
+        static bool wasOpen[2] = {};
+
+        auto widget = Script::Get<void*>(root, L"m_PlanningWidget");
+        auto console = *reinterpret_cast<void**>(viewport + Console);
+
+        for (auto i = 0; i < 2; ++i)
+        {
+            auto open = Script::GetBool(widget, popups[i][0]);
+            auto popup = open && !wasOpen[i] ? Script::Get<void*>(widget, popups[i][1]) : nullptr;
+
+            wasOpen[i] = open;
+
+            if (!popup)
+                continue;
+
+            auto x = Script::Get<float>(console, L"MouseX");
+            auto y = Script::Get<float>(console, L"MouseY");
+
+            auto left = x / (Script::Get<float>(Script::Get<void*>(widget, L"m_Right"), L"WinLeft")
+                           - Script::Get<float>(Script::Get<void*>(widget, L"m_Left"), L"WinWidth")) > 0.5f;
+            auto up = y / (Script::Get<float>(Script::Get<void*>(widget, L"m_Bottom"), L"WinTop")
+                         - Script::Get<float>(Script::Get<void*>(widget, L"m_Top"), L"WinHeight")) > 0.5f;
+
+            // The 3D view puts the popup below its frame, at a y the script writes in units already
+            if (Script::GetBool(Script::Get<void*>(widget, L"m_3DButton"), L"m_bSelected"))
+            {
+                y = 200.0f;
+                up = false;
+            }
+
+            // Resized() compensates by the size delta once the list has measured itself, and the
+            // cascaded ACTION/SPEED menus inherit these, so the flags go back with the position
+            Script::SetBool(popup, L"m_bDisplayLeft", left);
+            Script::SetBool(popup, L"m_bDisplayUp", up);
+            Script::Set<float>(popup, L"WinLeft", x - (left ? Script::Get<float>(popup, L"WinWidth") : 0.0f));
+            Script::Set<float>(popup, L"WinTop", y - (up ? Script::Get<float>(popup, L"WinHeight") : 0.0f));
+        }
+    }
+
     // R6MenuInGameRootWindow.WindowEvent repins the root to viewport pixels every frame, so GUIScale is the only thing here that is ours.
     // Children use 640x480 coordinates at 0,0, centered by ApplyResolutionOnWindowsPos.
     // Written absolutely so repeats do not compound.
@@ -372,6 +422,7 @@ namespace
         {
             Fit(root, viewport);
             FitLevelFromMe();
+            FitPlanningPopup(root, viewport);
         }
         else if (inGame)
         {
