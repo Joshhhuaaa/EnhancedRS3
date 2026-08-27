@@ -60,6 +60,7 @@ namespace
     SafetyHookInline shSetRes{};
     SafetyHookInline shExit{};
     SafetyHookInline shUnlock{};
+    SafetyHookInline shLock{};
 
     int  (__fastcall* TArrayAdd)(TArray*, void*, int)         = nullptr;
     void (__fastcall* TArrayRemove)(TArray*, void*, int, int) = nullptr;
@@ -312,6 +313,19 @@ namespace
         TArrayRemove(stack, nullptr, stack->Num - count, count);
     }
 
+    // UGameEngine::Draw leaves *HitSize at the requested capacity when the lock fails, and
+    // AR6PlanningCtrl then walks its own uninitialized stack as hit proxies. A device loss or
+    // alt-tab that minimises the game is enough to trigger this.
+    void* __fastcall Lock(void* self, void* edx, void* viewport, uint8_t* hitData, int* hitSize)
+    {
+        auto renderInterface = shLock.thiscall<void*>(self, viewport, hitData, hitSize);
+
+        if (!renderInterface && hitSize)
+            *hitSize = 0;
+
+        return renderInterface;
+    }
+
     void __fastcall Unlock(void* self, void* edx, uint8_t* renderInterface)
     {
         // Stock wrote HitData during the frame and Unlock only publishes HitCount, so the
@@ -347,14 +361,15 @@ EDITOR_FEATURE(D3DDrv, HitTest)
     auto setRes  = GetProcAddress(d3dDrv, "?SetRes@UD3DRenderDevice@@UAEHPAVUViewport@@HHH@Z");
     auto exit    = GetProcAddress(d3dDrv, "?Exit@UD3DRenderDevice@@UAEXPAVUViewport@@@Z");
     auto unlock  = GetProcAddress(d3dDrv, "?Unlock@UD3DRenderDevice@@UAEXPAVFRenderInterface@@@Z");
+    auto lock    = GetProcAddress(d3dDrv, "?Lock@UD3DRenderDevice@@UAEPAVFRenderInterface@@PAVUViewport@@PAEPAH@Z");
 
     TArrayAdd    = reinterpret_cast<decltype(TArrayAdd)>(GetProcAddress(engine, "?Add@?$TArray@E@@QAEHH@Z"));
     TArrayRemove = reinterpret_cast<decltype(TArrayRemove)>(GetProcAddress(engine, "?Remove@?$TArray@E@@QAEXHH@Z"));
 
-    if (pushHit.empty() || popHit.empty() || !setRes || !exit || !unlock || !TArrayAdd || !TArrayRemove)
+    if (pushHit.empty() || popHit.empty() || !setRes || !exit || !unlock || !lock || !TArrayAdd || !TArrayRemove)
     {
-        spdlog::error("HitTest: PushHit {}, PopHit {}, SetRes {}, Exit {}, Unlock {}, TArray::Add {}, TArray::Remove {}",
-                      !pushHit.empty(), !popHit.empty(), (void*)setRes, (void*)exit, (void*)unlock, (void*)TArrayAdd, (void*)TArrayRemove);
+        spdlog::error("HitTest: PushHit {}, PopHit {}, SetRes {}, Exit {}, Unlock {}, Lock {}, TArray::Add {}, TArray::Remove {}",
+                      !pushHit.empty(), !popHit.empty(), (void*)setRes, (void*)exit, (void*)unlock, (void*)lock, (void*)TArrayAdd, (void*)TArrayRemove);
         return;
     }
 
@@ -363,5 +378,6 @@ EDITOR_FEATURE(D3DDrv, HitTest)
     shSetRes  = safetyhook::create_inline(setRes, SetRes);
     shExit    = safetyhook::create_inline(exit, Exit);
     shUnlock  = safetyhook::create_inline(unlock, Unlock);
+    shLock    = safetyhook::create_inline(lock, Lock);
     spdlog::info("HitTest: Hit testing batched through an atlas, one read back per frame");
 }
