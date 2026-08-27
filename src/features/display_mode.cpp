@@ -26,6 +26,17 @@ namespace
         return window ? *reinterpret_cast<HWND*>(window + 4) : nullptr;
     }
 
+    void ClipToClient(HWND hWnd)
+    {
+        RECT client{};
+
+        if (GetClientRect(hWnd, &client))
+        {
+            MapWindowPoints(hWnd, nullptr, reinterpret_cast<POINT*>(&client), 2);
+            ClipCursor(&client);
+        }
+    }
+
     bool CursorOverClient(HWND hWnd)
     {
         POINT cursor{};
@@ -66,14 +77,7 @@ namespace
 
         // Keep the cursor clipped while focused and over the client area so releasing capture does not let it leave the game
         if (!capture && bInputFocus && GetForegroundWindow() == hWnd && CursorOverClient(hWnd))
-        {
-            RECT client{};
-            if (GetClientRect(hWnd, &client))
-            {
-                MapWindowPoints(hWnd, nullptr, reinterpret_cast<POINT*>(&client), 2);
-                ClipCursor(&client);
-            }
-        }
+            ClipToClient(hWnd);
     }
 
     // WM_MOUSEMOVE updates WindowsMouseX/Y which the menu cursor reads so ignore it until the game has focus
@@ -142,6 +146,10 @@ namespace
             // SetRes clips the cursor to the old client rect so restore it to the new monitor bounds
             ClipCursor(&monitor.rcMonitor);
         }
+        // A resolution change resizes the window under the cursor, so the capture SetRes ends with is
+        // declined and the cursor stays clipped to the client rect the window had before
+        else if (result && bInputFocus)
+            ClipToClient(hWnd);
 
         return result;
     }
