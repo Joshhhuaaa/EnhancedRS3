@@ -319,8 +319,11 @@ namespace
         if (width * 3.0f <= height * 4.0f)
             return;
 
+        // The quad loses its topmost row and leftmost column to the sample grid, and those pixels
+        // then show the scene the pass never touched. A pixel of overhang each way takes them back.
         std::copy(std::begin(Identity), std::end(Identity), std::begin(coneWorld));
-        coneWorld[0] = height * 4.0f / 3.0f / width;
+        coneWorld[0] = (height * 4.0f / 3.0f + 2.0f) / width;
+        coneWorld[5] = (height + 2.0f) / height;
 
         ConeWorld(ctx.esi, coneWorld);
         bVisionCone = true;
@@ -360,8 +363,9 @@ namespace
         auto width = static_cast<int32_t>(viewport.width);
         auto height = static_cast<int32_t>(viewport.height);
 
-        // Rounded up, so the strips meet the quad from the outside.
-        auto inset = static_cast<int32_t>(std::ceil(static_cast<float>(width) * (1.0f - coneWorld[0]) * 0.5f));
+        // Rounded up, so the strips meet the quad from the outside. Off the viewport, since the
+        // transform carries the overhang as well as the confine.
+        auto inset = static_cast<int32_t>(std::ceil((width - height * 4 / 3.0f) * 0.5f));
         if (inset <= 0)
             return;
 
