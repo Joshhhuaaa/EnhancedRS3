@@ -7,6 +7,7 @@
 #include "d3d8to9.hpp"
 #include "aniso.hpp" // ANISO
 #include "smaa.hpp" // SMAA
+#include "msaa.hpp" // MSAA
 #include <regex>
 #include <assert.h>
 
@@ -42,6 +43,7 @@ Direct3DDevice8::Direct3DDevice8(Direct3D8 *d3d, IDirect3DDevice9 *ProxyInterfac
 Direct3DDevice8::~Direct3DDevice8()
 {
 	Smaa::Shutdown(); // SMAA
+	Msaa::OnDeviceLost(); // MSAA
 
 	delete ProxyAddressLookupTable;
 }
@@ -71,7 +73,7 @@ ULONG STDMETHODCALLTYPE Direct3DDevice8::AddRef()
 	ULONG LastRefCount = ProxyInterface->AddRef();
 
 	// Shaders and state blocks increase ref counter in d3d9 but not in d3d8
-	DWORD ExtraRefs = VertexShaderAndDeclarationCount + PixelShaderHandles.size() + StateBlockTokens.size() + Smaa::InternalDeviceRefs(); // SMAA
+	DWORD ExtraRefs = VertexShaderAndDeclarationCount + PixelShaderHandles.size() + StateBlockTokens.size() + Smaa::InternalDeviceRefs() + Msaa::InternalDeviceRefs(); // SMAA / MSAA
 	if (ExtraRefs <= LastRefCount)
 	{
 		LastRefCount = LastRefCount - ExtraRefs;
@@ -88,7 +90,7 @@ ULONG STDMETHODCALLTYPE Direct3DDevice8::Release()
 
 	// Shaders and StateBlocks are destroyed alongside the device that created them in D3D8 but not in D3D9
 	// so we need to Release any remaining shaders or state blocks when the device is released to mirror that behaviour
-	DWORD ExtraRefs = VertexShaderAndDeclarationCount + PixelShaderHandles.size() + StateBlockTokens.size() + Smaa::InternalDeviceRefs(); // SMAA
+	DWORD ExtraRefs = VertexShaderAndDeclarationCount + PixelShaderHandles.size() + StateBlockTokens.size() + Smaa::InternalDeviceRefs() + Msaa::InternalDeviceRefs(); // SMAA / MSAA
 	if (ExtraRefs <= LastRefCount)
 	{
 		LastRefCount = LastRefCount - ExtraRefs;
@@ -98,6 +100,7 @@ ULONG STDMETHODCALLTYPE Direct3DDevice8::Release()
 			ReleaseShadersAndStateBlocks();
 			// Our own proxy objects go with them, or the device never reaches zero
 			Smaa::Shutdown(); // SMAA
+			Msaa::OnDeviceLost(); // MSAA
 		}
 	}
 
@@ -186,6 +189,7 @@ HRESULT STDMETHODCALLTYPE Direct3DDevice8::CreateAdditionalSwapChain(D3DPRESENT_
 
 	D3DPRESENT_PARAMETERS PresentParams;
 	ConvertPresentParameters(*pPresentationParameters, PresentParams);
+	Msaa::OnPresentParameters(ProxyInterface, PresentParams); // MSAA
 
 	IDirect3DSwapChain9 *SwapChainInterface = nullptr;
 
@@ -224,12 +228,28 @@ HRESULT STDMETHODCALLTYPE Direct3DDevice8::Reset(D3DPRESENT_PARAMETERS8 *pPresen
 	// Skipped while the device is still lost, because Reset cannot succeed yet and the game's
 	// recovery loop assumes a failed Reset left everything as it was
 	if (deviceState != D3DERR_DEVICELOST)
+	{
 		Smaa::OnDeviceLost(); // SMAA
+		Msaa::OnDeviceLost(); // MSAA - the depth substitute is DEFAULT-pool as well
+	}
 
 	D3DPRESENT_PARAMETERS PresentParams;
 	ConvertPresentParameters(*pPresentationParameters, PresentParams);
+	Msaa::OnPresentParameters(ProxyInterface, PresentParams); // MSAA
+
+	// A redundant Reset can wedge exclusive fullscreen on Windows 11 with a multisampled DISCARD
+	// swap chain: Reset and Present succeed, but the screen stays black until an alt-tab cycle.
+	// The game rebuilds the same mode on every menu transition, so skip those Resets without
+	// touching the device. A lost device never takes this path, so Lock's recovery still runs.
+	if (Msaa::SkipRedundantReset(ProxyInterface, PresentParams)) // MSAA
+		return D3D_OK;
 
 	const HRESULT hr = ProxyInterface->Reset(&PresentParams);
+
+#ifndef D3D8TO9NOLOG
+	if (FAILED(hr))
+		LOG << "> Reset failed with 0x" << std::hex << hr << std::dec << std::endl;
+#endif
 
 	if (SUCCEEDED(hr))
 	{
@@ -242,6 +262,7 @@ HRESULT STDMETHODCALLTYPE Direct3DDevice8::Reset(D3DPRESENT_PARAMETERS8 *pPresen
 		ProxyInterface->SetRenderState(D3DRS_DEPTHBIAS, *(DWORD*)&DepthBias);
 
 		Aniso::OnDeviceReady(ProxyInterface); // ANISO
+		Msaa::OnParamsApplied(PresentParams); // MSAA
 	}
 
 	return hr;
@@ -252,7 +273,22 @@ HRESULT STDMETHODCALLTYPE Direct3DDevice8::Present(const RECT *pSourceRect, cons
 
 	Smaa::OnPresent(ProxyInterface); // SMAA
 
-	return ProxyInterface->Present(pSourceRect, pDestRect, hDestWindowOverride, nullptr);
+	// The game passes a source rect windowed, which is illegal on the DISCARD chain MSAA forces
+	if (Msaa::Active()) // MSAA
+		pSourceRect = pDestRect = nullptr; // MSAA
+
+	const HRESULT hr = ProxyInterface->Present(pSourceRect, pDestRect, hDestWindowOverride, nullptr);
+
+#ifndef D3D8TO9NOLOG
+	static HRESULT LastPresentResult = D3D_OK;
+	if (hr != LastPresentResult)
+	{
+		LOG << "> Present result changed to 0x" << std::hex << hr << std::dec << std::endl;
+		LastPresentResult = hr;
+	}
+#endif
+
+	return hr;
 }
 HRESULT STDMETHODCALLTYPE Direct3DDevice8::GetBackBuffer(UINT iBackBuffer, D3DBACKBUFFER_TYPE Type, IDirect3DSurface8 **ppBackBuffer)
 {
@@ -606,7 +642,8 @@ HRESULT STDMETHODCALLTYPE Direct3DDevice8::SetRenderTarget(IDirect3DSurface8 *pR
 	if (pNewZStencil != nullptr)
 	{
 		auto pNewZStencilImpl = static_cast<Direct3DSurface8 *>(pNewZStencil);
-		hr = ProxyInterface->SetDepthStencilSurface(pNewZStencilImpl->GetProxyInterface());
+		IDirect3DSurface9 *const DepthInterface = Msaa::OnSetDepthStencil(ProxyInterface, pRenderTarget != nullptr ? static_cast<Direct3DSurface8 *>(pRenderTarget)->GetProxyInterface() : nullptr, pNewZStencilImpl->GetProxyInterface()); // MSAA
+		hr = ProxyInterface->SetDepthStencilSurface(DepthInterface); // MSAA
 		if (FAILED(hr))
 			return hr;
 

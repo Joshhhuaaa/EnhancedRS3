@@ -4,6 +4,7 @@
  */
 
 #include "d3d8to9.hpp"
+#include "msaa.hpp" // MSAA
 
 static const D3DFORMAT AdapterFormats[] = {
 	D3DFMT_A8R8G8B8,
@@ -179,12 +180,15 @@ HRESULT STDMETHODCALLTYPE Direct3D8::CreateDevice(UINT Adapter, D3DDEVTYPE Devic
 
 	D3DPRESENT_PARAMETERS PresentParams;
 	ConvertPresentParameters(*pPresentationParameters, PresentParams);
+	Msaa::OnPresentParameters(ProxyInterface, Adapter, DeviceType, PresentParams); // MSAA
 
 	IDirect3DDevice9 *DeviceInterface = nullptr;
 
 	const HRESULT hr = ProxyInterface->CreateDevice(Adapter, DeviceType, hFocusWindow, BehaviorFlags, &PresentParams, &DeviceInterface);
 	if (FAILED(hr))
 		return hr;
+
+	Msaa::OnParamsApplied(PresentParams); // MSAA
 
 	*ppReturnedDeviceInterface = new Direct3DDevice8(this, DeviceInterface, BehaviorFlags, PresentParams.EnableAutoDepthStencil ? PresentParams.AutoDepthStencilFormat : D3DFMT_UNKNOWN, (PresentParams.Flags & D3DPRESENTFLAG_DISCARD_DEPTHSTENCIL) != 0);
 

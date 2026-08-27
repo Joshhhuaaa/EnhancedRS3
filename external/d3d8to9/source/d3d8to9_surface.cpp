@@ -4,6 +4,7 @@
  */
 
 #include "d3d8to9.hpp"
+#include "msaa.hpp" // MSAA
 
 Direct3DSurface8::Direct3DSurface8(Direct3DDevice8 *Device, IDirect3DSurface9 *ProxyInterface) :
 	Device(Device), ProxyInterface(ProxyInterface)
@@ -91,9 +92,15 @@ HRESULT STDMETHODCALLTYPE Direct3DSurface8::GetDesc(D3DSURFACE_DESC8 *pDesc)
 }
 HRESULT STDMETHODCALLTYPE Direct3DSurface8::LockRect(D3DLOCKED_RECT *pLockedRect, const RECT *pRect, DWORD Flags)
 {
-	return ProxyInterface->LockRect(pLockedRect, pRect, Flags);
+	const HRESULT hr = ProxyInterface->LockRect(pLockedRect, pRect, Flags);
+	if (hr == D3DERR_INVALIDCALL)
+		return Msaa::OnLockRect(Device->GetProxyInterface(), ProxyInterface, pLockedRect, pRect, Flags); // MSAA
+	return hr;
 }
 HRESULT STDMETHODCALLTYPE Direct3DSurface8::UnlockRect()
 {
+	if (Msaa::OnUnlockRect(ProxyInterface)) // MSAA
+		return D3D_OK;
+
 	return ProxyInterface->UnlockRect();
 }

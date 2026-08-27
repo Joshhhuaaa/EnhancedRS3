@@ -26,6 +26,7 @@
       <Filter>helpers</Filter>
     </ClCompile>
     <ClCompile Include="source\ini.cpp" />
+    <ClCompile Include="source\msaa.cpp" />
     <ClCompile Include="source\smaa.cpp" />
     <ClCompile Include="source\smaa_resources.cpp" />
     <ClCompile Include="source\embedded_d3dx9.cpp">
@@ -54,6 +55,7 @@
       <Filter>helpers</Filter>
     </ClInclude>
     <ClInclude Include="source\ini.hpp" />
+    <ClInclude Include="source\msaa.hpp" />
     <ClInclude Include="source\smaa.hpp" />
     <ClInclude Include="source\embedded_d3dx9.hpp">
       <Filter>helpers</Filter>

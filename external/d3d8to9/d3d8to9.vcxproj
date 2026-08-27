@@ -90,6 +90,7 @@
     <ClCompile Include="source\d3d8types.cpp" />
     <ClCompile Include="source\interface_query.cpp" />
     <ClCompile Include="source\ini.cpp" />
+    <ClCompile Include="source\msaa.cpp" />
     <ClCompile Include="source\smaa.cpp" />
     <ClCompile Include="source\smaa_resources.cpp">
       <!-- The embedded SMAA source text and lookup textures exceed the default object file limits -->
@@ -114,6 +115,7 @@
     <ClInclude Include="source\d3dx9.hpp" />
     <ClInclude Include="source\interface_query.hpp" />
     <ClInclude Include="source\ini.hpp" />
+    <ClInclude Include="source\msaa.hpp" />
     <ClInclude Include="source\smaa.hpp" />
     <ClInclude Include="source\embedded_d3dx9.hpp" />
     <ClInclude Include="source\MemoryModule\MemoryModule.h" />
