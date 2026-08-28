@@ -51,6 +51,9 @@
     <ClCompile Include="src\features\hud_widescreen.cpp">
       <Filter>features</Filter>
     </ClCompile>
+    <ClCompile Include="src\features\shadow_resolution.cpp">
+      <Filter>features</Filter>
+    </ClCompile>
     <ClCompile Include="src\features\skip_intro.cpp">
       <Filter>features</Filter>
     </ClCompile>

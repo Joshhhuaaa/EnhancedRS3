@@ -72,6 +72,7 @@
     <ClCompile Include="src\features\menu_resolution.cpp" />
     <ClCompile Include="src\features\net_speed.cpp" />
     <ClCompile Include="src\features\raw_input.cpp" />
+    <ClCompile Include="src\features\shadow_resolution.cpp" />
     <ClCompile Include="src\features\skip_intro.cpp" />
     <ClCompile Include="src\features\zoom_ramp.cpp" />
   </ItemGroup>
