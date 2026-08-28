@@ -658,7 +658,9 @@ namespace
         auto object = *reinterpret_cast<void**>(stack + 0x8);
         auto scale = WindowScale(object);
 
-        if (scale == 1.0f)
+        // Only UWindowWindow.TextSize does that division. R6OperativeSelectorItem calls the native
+        // itself and centers its labels against window units, so it must see the unscaled width.
+        if (scale == 1.0f || *reinterpret_cast<void**>(stack + 0x4) != Script::Declaration(object, L"TextSize"))
             return;
 
         *(*reinterpret_cast<float**>(ctx.ebp - 0x2c)) *= scale;

@@ -973,12 +973,15 @@ namespace
     // Only the menu cursor needs to be converted back before the stretch.
     void __fastcall ExecDrawTile(uint8_t* self, void* edx, uint8_t* stack, void* result)
     {
-        auto s = CursorScale(self, stack);
+        // DrawStretchedTextureSegment is handed GUIScale, but a window reaching DrawTile itself is not,
+        // so R6OperativeSelectorItem's portrait and health icon stay at their 640x480 size.
+        auto cursor = CursorScale(self, stack);
+        auto s = cursor != 1.0f ? cursor : MenuScale(stack);
 
         if (s == 1.0f)
             shExecDrawTile.thiscall<void>(self, stack, result);
         else
-            Stretched(self, s, bWidget ? Placed::Units : Placed::Cursor, [&] { shExecDrawTile.thiscall<void>(self, stack, result); });
+            Stretched(self, s, cursor != 1.0f && !bWidget ? Placed::Cursor : Placed::Units, [&] { shExecDrawTile.thiscall<void>(self, stack, result); });
     }
 
     void __fastcall ExecDrawTileClipped(uint8_t* self, void* edx, uint8_t* stack, void* result)
