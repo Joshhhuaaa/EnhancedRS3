@@ -1,6 +1,6 @@
 # Enhanced RS3
 
-A major patch for Rainbow Six 3, fixing bugs and adding gameplay improvements.
+A patch for Rainbow Six 3, fixing bugs and adding gameplay improvements.
 
 If you'd like to donate, all contributions are appreciated.
 <div align="left">
