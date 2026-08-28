@@ -9,8 +9,10 @@ namespace
 {
     enum { Fullscreen, Borderless, Windowed };
 
-    constexpr ptrdiff_t Window   = 0x204;  // UWindowsViewport::Window, WWindow::hWnd sits at +4
-    constexpr ptrdiff_t Captured = 0x220;  // the last SetMouseCapture Capture argument
+    constexpr ptrdiff_t Window          = 0x204;  // UWindowsViewport::Window, WWindow::hWnd sits at +4
+    constexpr ptrdiff_t BlitFlags       = 0x218;  // BLIT_Fullscreen is bit 0
+    constexpr ptrdiff_t CaptionStripped = 0x21c;  // UWindowsViewport::Borderless, set when fullscreen dropped WS_CAPTION | WS_THICKFRAME
+    constexpr ptrdiff_t Captured        = 0x220;  // the last SetMouseCapture Capture argument
 
     SafetyHookInline shSetRes{};
     SafetyHookInline shViewportWndProc{};
@@ -24,6 +26,11 @@ namespace
     {
         auto window = *reinterpret_cast<uint8_t**>(viewport + Window);
         return window ? *reinterpret_cast<HWND*>(window + 4) : nullptr;
+    }
+
+    bool IsWindowed(uint8_t* viewport)
+    {
+        return (*reinterpret_cast<uint32_t*>(viewport + BlitFlags) & 1) == 0;
     }
 
     void ClipToClient(HWND hWnd)
@@ -56,8 +63,8 @@ namespace
         auto hWnd = WindowOf(self);
 
         // Capture clips the cursor to the client and makes the window receive non client messages
-        // so capturing over the title bar makes it undraggable
-        if (capture && (!bInputFocus || !CursorOverClient(hWnd)))
+        // so capturing over the title bar makes it undraggable. Fullscreen has no frame to protect
+        if (capture && IsWindowed(self) && (!bInputFocus || !CursorOverClient(hWnd)))
         {
             // Retry once the cursor is back inside if the game still has focus
             bRetakeCapture = bInputFocus;
@@ -76,7 +83,7 @@ namespace
             SetCursorPos(cursor.x, cursor.y);
 
         // Keep the cursor clipped while focused and over the client area so releasing capture does not let it leave the game
-        if (!capture && bInputFocus && GetForegroundWindow() == hWnd && CursorOverClient(hWnd))
+        if (!capture && IsWindowed(self) && bInputFocus && GetForegroundWindow() == hWnd && CursorOverClient(hWnd))
             ClipToClient(hWnd);
     }
 
@@ -122,6 +129,10 @@ namespace
         MONITORINFO monitor{};
         monitor.cbSize = sizeof(monitor);
 
+        // Alt+Enter already asks for windowed, so only the forced modes override the argument
+        if (nDisplayMode != Fullscreen)
+            fullscreen = 0;
+
         auto bBorderless = nDisplayMode == Borderless && hWnd &&
                            GetMonitorInfoW(MonitorFromWindow(hWnd, MONITOR_DEFAULTTOPRIMARY), &monitor);
 
@@ -131,11 +142,23 @@ namespace
             newY = monitor.rcMonitor.bottom - monitor.rcMonitor.top;
         }
 
-        // Prevent window resizing since the renderer does not follow the window size
-        if (nDisplayMode == Windowed && hWnd)
-            SetWindowLongW(hWnd, GWL_STYLE, GetWindowLongW(hWnd, GWL_STYLE) & ~(WS_THICKFRAME | WS_MAXIMIZEBOX));
+        // Prevent window resizing since the renderer does not follow the window size. ResizeViewport puts
+        // WS_CAPTION and WS_THICKFRAME back together once the window has been fullscreen, so the caption is
+        // restored here and its flag cleared to leave its AdjustWindowRect on the final style
+        if (!fullscreen && !bBorderless && hWnd)
+        {
+            auto style = GetWindowLongW(hWnd, GWL_STYLE) & ~(WS_THICKFRAME | WS_MAXIMIZEBOX);
 
-        auto result = shSetRes.thiscall<int>(self, viewport, newX, newY, 0);
+            if (*reinterpret_cast<int32_t*>(viewport + CaptionStripped))
+            {
+                *reinterpret_cast<int32_t*>(viewport + CaptionStripped) = 0;
+                style |= WS_CAPTION;
+            }
+
+            SetWindowLongW(hWnd, GWL_STYLE, style);
+        }
+
+        auto result = shSetRes.thiscall<int>(self, viewport, newX, newY, fullscreen);
 
         // ResizeViewport changes the window style and position so apply the borderless style afterward
         if (result && bBorderless)
@@ -148,7 +171,7 @@ namespace
         }
         // A resolution change resizes the window under the cursor, so the capture SetRes ends with is
         // declined and the cursor stays clipped to the client rect the window had before
-        else if (result && bInputFocus)
+        else if (result && !fullscreen && bInputFocus)
             ClipToClient(hWnd);
 
         return result;
@@ -157,9 +180,6 @@ namespace
 
 FEATURE(D3DDrv, DisplayMode)
 {
-    if (nDisplayMode == Fullscreen)
-        return;
-
     auto setRes = GetProcAddress(GetModuleHandleW(L"D3DDrv"), "?SetRes@UD3DRenderDevice@@UAEHPAVUViewport@@HHH@Z");
     auto wndProc = GetProcAddress(GetModuleHandleW(L"WinDrv"), "?ViewportWndProc@UWindowsViewport@@QAEJIIJ@Z");
     auto setMouseCapture = GetProcAddress(GetModuleHandleW(L"WinDrv"), "?SetMouseCapture@UWindowsViewport@@UAEXHHH@Z");
@@ -173,5 +193,6 @@ FEATURE(D3DDrv, DisplayMode)
     shSetRes = safetyhook::create_inline(setRes, SetRes);
     shViewportWndProc = safetyhook::create_inline(wndProc, ViewportWndProc);
     shSetMouseCapture = safetyhook::create_inline(setMouseCapture, SetMouseCapture);
-    spdlog::info("DisplayMode: {}", nDisplayMode == Borderless ? "borderless at the monitor resolution" : "windowed at the game resolution");
+    spdlog::info("DisplayMode: {}", nDisplayMode == Fullscreen ? "fullscreen, windowed on alt+enter" :
+        nDisplayMode == Borderless ? "borderless at the monitor resolution" : "windowed at the game resolution");
 }
