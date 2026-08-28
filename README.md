@@ -56,8 +56,8 @@ Forces anisotropic texture filtering.
 <div align="center">
   <table>
     <tr>
-      <td width="50%"><img style="width:100%" src="https://github.com/user-attachments/assets/a1f0d485-43e2-47e5-9130-aa6632271095"></td>
       <td width="50%"><img style="width:100%" src="https://github.com/user-attachments/assets/7d44b9c1-7ae1-4c13-bf8f-a48283e076b7"></td>
+      <td width="50%"><img style="width:100%" src="https://github.com/user-attachments/assets/a1f0d485-43e2-47e5-9130-aa6632271095"></td>
     </tr>
     <tr>
       <td align="center">Stock</td>
@@ -66,8 +66,24 @@ Forces anisotropic texture filtering.
   </table>
 </div>
 
+### Multisample Antialiasing (MSAA)
+Enables MSAA to smooth jagged edges while preserving a sharp image. MSAA does not smooth alpha-tested edges such as fences and foliage.
+
+<div align="center">
+  <table>
+    <tr>
+      <td width="50%"><img style="width:100%" src="https://github.com/user-attachments/assets/4ec1aab5-ced4-413b-8bb9-2eb3b893db7d"></td>
+      <td width="50%"><img style="width:100%" src="https://github.com/user-attachments/assets/e23ba662-9a50-4330-afd1-2a7224e1e5a4"></td>
+    </tr>
+    <tr>
+      <td align="center">Stock</td>
+      <td align="center">MSAA 8x</td>
+    </tr>
+  </table>
+</div>
+
 ### Subpixel Morphological Antialiasing (SMAA)
-Enables SMAA to smooth jagged edges.
+Enables SMAA to smooth jagged edges with a softer image. SMAA also smooths alpha-tested edges such as fences and foliage.
 
 <div align="center">
   <table>
