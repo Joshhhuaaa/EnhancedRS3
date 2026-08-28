@@ -69,6 +69,7 @@
     <ClCompile Include="src\features\hud_widescreen.cpp" />
     <ClCompile Include="src\features\localization.cpp" />
     <ClCompile Include="src\features\master_server.cpp" />
+    <ClCompile Include="src\features\material_tree.cpp" />
     <ClCompile Include="src\features\menu_resolution.cpp" />
     <ClCompile Include="src\features\net_speed.cpp" />
     <ClCompile Include="src\features\raw_input.cpp" />
