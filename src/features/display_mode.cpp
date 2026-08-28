@@ -98,7 +98,7 @@ namespace
         // Re-capture on a click or after a deferred capture once the cursor is back inside the client
         auto bClick = msg == WM_LBUTTONDOWN || msg == WM_RBUTTONDOWN || msg == WM_MBUTTONDOWN;
 
-        if ((bClick || (msg == WM_MOUSEMOVE && bRetakeCapture)) &&
+        if (IsWindowed(self) && (bClick || (msg == WM_MOUSEMOVE && bRetakeCapture)) &&
             !*reinterpret_cast<int32_t*>(self + Captured) && CursorOverClient(hWnd))
             SetMouseCapture(self, nullptr, 1, 1, 0);
 

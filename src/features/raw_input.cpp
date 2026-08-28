@@ -92,6 +92,14 @@ namespace
         if (!bInputFocus && (msg == WM_KEYDOWN || msg == WM_KEYUP || msg == WM_CHAR))
             return 0;
 
+        // ViewportWndProc returns 0 for every WM_SYSKEYDOWN, so DefWindowProc never sees Alt+F4, and handing it
+        // either the keystroke or the SC_CLOSE it stands for produces nothing, so post what both would have led to
+        if (msg == WM_SYSKEYDOWN && wParam == VK_F4)
+        {
+            PostMessageW(hWnd, WM_CLOSE, 0, 0);
+            return 0;
+        }
+
         if (msg == WM_INPUT && bInputFocus)
         {
             RAWINPUT raw{};
