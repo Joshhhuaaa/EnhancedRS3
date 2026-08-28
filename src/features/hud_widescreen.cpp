@@ -558,14 +558,6 @@ namespace
         ctx.eax = static_cast<uintptr_t>(static_cast<int32_t>(projected - width * Scale(ScaleY) * 0.5f));
     }
 
-    float AdjustFOV(float fov, float aspect)
-    {
-        constexpr double pi = 3.14159265358979323846;
-        constexpr double baseAspect = 4.0 / 3.0;
-
-        return static_cast<float>(std::round(2.0 * std::atan((aspect / baseAspect) * std::tan(fov / 2.0 * (pi / 180.0))) * (180.0 / pi) * 100.0) / 100.0);
-    }
-
     // The on/off-screen switch has its own FOV copy that never goes through FCameraSceneNode, so
     // the cone stays at the narrow 4:3 angle. Re-widened here from the half-angle on the stack.
     void WaypointFOV(SafetyHookContext& ctx)

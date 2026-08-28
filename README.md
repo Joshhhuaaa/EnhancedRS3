@@ -26,7 +26,7 @@ Skips the Ubisoft, Red Storm Entertainment, and intro videos for a faster launch
 ### Widescreen Support
 In the stock game, menus and cutscenes are hardcoded to render at 640x480, while the HUD stretches at widescreen aspect ratios. Enhanced RS3 renders menus and cutscenes at the in-game resolution and dynamically scales HUD elements to maintain their original proportions at any resolution.
 
-Field of view is calculated automatically based on the aspect ratio, widening the horizontal FOV while preserving the vertical FOV from 4:3.
+Field of view is calculated automatically based on the aspect ratio, widening the horizontal FOV while preserving the vertical FOV from 4:3. `FieldOfView` in the ini can turn this off for the stock projection, or force a specific horizontal FOV instead.
 
 <div align="center">
   <table>

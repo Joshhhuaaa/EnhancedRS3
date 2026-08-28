@@ -11,6 +11,9 @@ inline bool bInputFocus = false;
 
 void InitPaths();
 
+// Widens a horizontal FOV hor+ per Graphics/FieldOfView. Defined in features/fov.cpp
+float AdjustFOV(float fov, float aspect);
+
 // Retail and the digital release need different signatures often enough to be worth
 // passing both. Returns the first one that hits.
 inline hook::pattern FindModulePattern(HMODULE module, std::initializer_list<std::string_view> patterns)
