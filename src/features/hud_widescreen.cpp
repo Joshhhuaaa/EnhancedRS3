@@ -25,6 +25,8 @@ namespace
     constexpr ptrdiff_t ClipY       = 0x44;
     constexpr ptrdiff_t CurX        = 0x50;
     constexpr ptrdiff_t CurY        = 0x54;
+    constexpr ptrdiff_t SizeX       = 0x6c;
+    constexpr ptrdiff_t SizeY       = 0x70;
     constexpr ptrdiff_t Viewport    = 0x7c;
     constexpr ptrdiff_t StretchX    = 0x94;
     constexpr ptrdiff_t StretchY    = 0x98;
@@ -403,8 +405,10 @@ namespace
         if (!fHUDScale || !viewport)
             return 1.0f;
 
-        auto sizeX = static_cast<float>(*reinterpret_cast<int32_t*>(viewport + ViewportSizeX));
-        auto sizeY = static_cast<float>(*reinterpret_cast<int32_t*>(viewport + ViewportSizeY));
+        // UCanvas::Update copies the viewport size into the canvas, so these still describe the whole
+        // screen while StretchMenus has the viewport narrowed for the menu paint
+        auto sizeX = static_cast<float>(*reinterpret_cast<int32_t*>(canvas + SizeX));
+        auto sizeY = static_cast<float>(*reinterpret_cast<int32_t*>(canvas + SizeY));
 
         if (*reinterpret_cast<float*>(canvas + StretchX) != 1.0f || *reinterpret_cast<float*>(canvas + StretchY) != 1.0f)
             return 1.0f;
