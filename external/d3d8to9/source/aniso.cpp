@@ -35,7 +35,7 @@ void Aniso::OnDeviceReady(IDirect3DDevice9 *Device)
 			CapsMax = Caps.MaxAnisotropy;
 		}
 
-		Level = static_cast<DWORD>(Ini::ReadInt(L"AnisotropicFiltering", 16));
+		Level = static_cast<DWORD>(Ini::ReadInt(L"Graphics", L"AnisotropicFiltering", 16));
 		if (Level > CapsMax)
 			Level = CapsMax;
 		if (Level <= 1)

@@ -388,7 +388,7 @@ void Smaa::OnPresent(IDirect3DDevice9 *Device)
 	if (!Configured)
 	{
 		Configured = true;
-		Enabled = Ini::ReadInt(L"SMAA", 1) != 0;
+		Enabled = Ini::ReadInt(L"Graphics", L"SMAA", 1) != 0;
 		SMAA_LOG((Enabled ? "enabled" : "disabled"));
 	}
 

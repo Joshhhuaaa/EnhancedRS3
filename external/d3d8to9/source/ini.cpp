@@ -3,7 +3,7 @@
 #include <cstdlib>
 #include <windows.h>
 
-int Ini::ReadInt(const wchar_t *Key, int Default)
+int Ini::ReadInt(const wchar_t *Section, const wchar_t *Key, int Default)
 {
 	// The ASI's own ini, next to it in 'system\plugins'. 'd3d8.dll' and 'RavenShield.exe'
 	// both live in 'system', so the exe path is the same directory and one call shorter
@@ -20,7 +20,7 @@ int Ini::ReadInt(const wchar_t *Key, int Default)
 	wcsncat_s(Path, L"plugins\\EnhancedRS3.ini", _TRUNCATE);
 
 	wchar_t Text[64] = {};
-	if (GetPrivateProfileStringW(L"Graphics", Key, L"", Text, _countof(Text), Path) == 0)
+	if (GetPrivateProfileStringW(Section, Key, L"", Text, _countof(Text), Path) == 0)
 		return Default;
 
 	// Parse the number before any trailing // comment

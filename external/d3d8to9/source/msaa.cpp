@@ -38,7 +38,7 @@ void Msaa::OnPresentParameters(IDirect3D9 *D3D, UINT Adapter, D3DDEVTYPE DeviceT
 {
 	if (Requested < 0)
 	{
-		Requested = HostIsGame() ? Ini::ReadInt(L"MSAA", 0) : 0;
+		Requested = HostIsGame() ? Ini::ReadInt(L"Graphics", L"MSAA", 0) : 0;
 
 		if (Requested < 2)
 			MSAA_LOG("off");
