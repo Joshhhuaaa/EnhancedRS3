@@ -114,6 +114,7 @@ namespace
     SafetyHookInline shExecUseVirtualSize{};
     SafetyHookInline shExecDrawTile{};
     SafetyHookInline shExecDrawText{};
+    SafetyHookInline shExecStrLen{};
     SafetyHookInline shDrawStringWorker{};
     SafetyHookMid mhClipTextNative{};
     SafetyHookMid mhTextSize{};
@@ -141,6 +142,7 @@ namespace
     void*     rose = nullptr;
     float     roseScale = 1.0f;
     float     roseOffset = 0.0f;
+    bool      roseText = false;
     bool      virtualSize = false;
     uintptr_t base  = 0;
     uintptr_t limit = 0;
@@ -207,12 +209,12 @@ namespace
         auto sizeY = static_cast<float>(*reinterpret_cast<int32_t*>(viewport + ViewportSizeY));
         auto width = sizeY * 4.0f / 3.0f;
 
-        // 4:3 and narrower is already round; the early out leaves those resolutions untouched
-        if (sizeX <= 0.0f || sizeY <= 0.0f || sizeX <= width)
+        if (sizeX <= 0.0f || sizeY <= 0.0f)
             return false;
 
-        roseScale = width / sizeX;
-        roseOffset = (sizeX - width) * 0.5f;
+        // Identity rather than an early out at 4:3, since the text size correction applies at every aspect
+        roseScale = sizeX > width ? width / sizeX : 1.0f;
+        roseOffset = sizeX > width ? (sizeX - width) * 0.5f : 0.0f;
         return true;
     }
 
@@ -687,9 +689,9 @@ namespace
 
         if (!bShift)
         {
-            // A measurement made on UGameEngine::Draw's behalf has to scale with the glyphs it is for,
-            // whatever the canvas looks like - the message loop narrows the clip before measuring.
-            auto scale = measure ? ViewportScale(self) : TextScale(self);
+            // Text drawn on UGameEngine::Draw's or the wheel's behalf has to scale with the glyphs it is
+            // for, whatever the canvas looks like - both narrow the clip before measuring.
+            auto scale = measure || roseText ? ViewportScale(self) : TextScale(self);
 
             if (scale == 1.0f)
             {
@@ -795,7 +797,10 @@ namespace
         *clipY = previousClipY;
         *stretchX = previousStretchX;
         *stretchY = previousStretchY;
-        return result;
+
+        // The width comes back in canvas units, and UGameEngine::Draw right-anchors the kill feed
+        // and centers the server messages against Viewport->SizeX with it.
+        return static_cast<int>(result * scale);
     }
 
     void __fastcall SetStretch(void* self, void* edx, float x, float y)
@@ -887,6 +892,31 @@ namespace
         rose = nullptr;
     }
 
+    // StrLen wraps against ClipX and its height centers the label in the box, so it has to measure
+    // against the same box DrawText will draw in
+    void __fastcall ExecStrLen(void* self, void* edx, uint8_t* stack, void* result)
+    {
+        auto canvas = static_cast<uint8_t*>(self);
+        auto object = *reinterpret_cast<void**>(stack + 0x8);
+
+        if (virtualSize || !Script::IsA(object, L"R6InteractionRoseDesVents") || !RoseTransform(canvas))
+        {
+            shExecStrLen.thiscall<void>(self, stack, result);
+            return;
+        }
+
+        auto clipX = reinterpret_cast<float*>(canvas + ClipX);
+        auto previousClipX = *clipX;
+
+        *clipX = previousClipX * roseScale;
+
+        roseText = true;
+        shExecStrLen.thiscall<void>(self, stack, result);
+        roseText = false;
+
+        *clipX = previousClipX;
+    }
+
     // Labels centered in box (OrgX + ClipX width, both stretched); must happen before worker sees coords
     void __fastcall ExecDrawText(void* self, void* edx, uint8_t* stack, void* result)
     {
@@ -900,17 +930,26 @@ namespace
         }
 
         auto orgX = reinterpret_cast<float*>(canvas + OrgX);
+        auto orgY = reinterpret_cast<float*>(canvas + OrgY);
         auto clipX = reinterpret_cast<float*>(canvas + ClipX);
+        auto scale = ViewportScale(canvas);
 
         auto previousOrgX = *orgX;
+        auto previousOrgY = *orgY;
         auto previousClipX = *clipX;
 
-        *orgX = previousOrgX * roseScale + roseOffset;
+        // WrappedPrint brings the clip and the pen down, but the worker resolves the origin inside
+        // its own stretch multiply, so that one has to come down here
+        *orgX = (previousOrgX * roseScale + roseOffset) / scale;
+        *orgY = previousOrgY / scale;
         *clipX = previousClipX * roseScale;
 
+        roseText = true;
         shExecDrawText.thiscall<void>(self, stack, result);
+        roseText = false;
 
         *clipX = previousClipX;
+        *orgY = previousOrgY;
         *orgX = previousOrgX;
     }
 
@@ -942,6 +981,7 @@ FEATURE(R6Game, WidescreenHUD)
     auto execUseVirtualSize = GetProcAddress(engine, "?execUseVirtualSize@UCanvas@@QAEXAAUFFrame@@QAX@Z");
     auto execDrawTile = GetProcAddress(engine, "?execDrawTile@UCanvas@@QAEXAAUFFrame@@QAX@Z");
     auto execDrawText = GetProcAddress(engine, "?execDrawText@UCanvas@@QAEXAAUFFrame@@QAX@Z");
+    auto execStrLen = GetProcAddress(engine, "?execStrLen@UCanvas@@QAEXAAUFFrame@@QAX@Z");
 
     if (!drawNativeHUD || !drawTile || !drawTileRotated || !drawString || !wrappedPrintf || !wrappedPrint || !setStretch || !useVirtualSize || !execUseVirtualSize || !wrappedStrLenf)
     {
@@ -974,14 +1014,15 @@ FEATURE(R6Game, WidescreenHUD)
 
     shExecUseVirtualSize = safetyhook::create_inline(execUseVirtualSize, ExecUseVirtualSize);
 
-    if (execDrawTile && execDrawText)
+    if (execDrawTile && execDrawText && execStrLen)
     {
         shExecDrawTile = safetyhook::create_inline(execDrawTile, ExecDrawTile);
         shExecDrawText = safetyhook::create_inline(execDrawText, ExecDrawText);
+        shExecStrLen = safetyhook::create_inline(execStrLen, ExecStrLen);
     }
     else
-        spdlog::error("WidescreenHUD: execDrawTile {}, execDrawText {} - the action wheel stays stretched",
-                      (void*)execDrawTile, (void*)execDrawText);
+        spdlog::error("WidescreenHUD: execDrawTile {}, execDrawText {}, execStrLen {} - the action wheel stays stretched",
+                      (void*)execDrawTile, (void*)execDrawText, (void*)execStrLen);
 
     shDrawStringWorker = safetyhook::create_inline(reinterpret_cast<void*>(engineBase + DrawStringWorker), DrawStringPrimitive);
 
