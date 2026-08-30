@@ -976,7 +976,13 @@ namespace
         // DrawStretchedTextureSegment is handed GUIScale, but a window reaching DrawTile itself is not,
         // so R6OperativeSelectorItem's portrait and health icon stay at their 640x480 size.
         auto cursor = CursorScale(self, stack);
-        auto s = cursor != 1.0f ? cursor : MenuScale(stack);
+
+        // DrawStretchedTextureSegmentRot is the one window path that applies GUIScale to its own position
+        // and size before calling DrawTile, so it arrives here in pixels already.
+        auto rotated = *reinterpret_cast<void**>(stack + 0x4)
+                    == Script::Declaration(*reinterpret_cast<void**>(stack + 0x8), L"DrawStretchedTextureSegmentRot");
+
+        auto s = cursor != 1.0f ? cursor : rotated ? 1.0f : MenuScale(stack);
 
         if (s == 1.0f)
             shExecDrawTile.thiscall<void>(self, stack, result);
