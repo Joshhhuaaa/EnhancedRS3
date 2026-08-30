@@ -251,20 +251,23 @@ namespace
     // same primitive. These re-enter the hook and pass through: the return address is in this dll.
     // The source rect is degenerate, so the strip uses the overlay's corner texel extended outward.
     // White leaves that texel unchanged, which excludes ADS overlays that are not fullscreen.
+    //
+    // CenterOptics leaves the far edges just short of the viewport, so floor them to cover the boundary pixel.
     void FillOutside(void* util, float* arg, float width, float height, uint32_t tint)
     {
         auto material = reinterpret_cast<void**>(arg)[9];
 
         if (arg[0] > 0.0f)
-        {
             drawTilePrimitive(util, nullptr, 0.0f, 0.0f, arg[0], height, 0.0f, 0.0f, 0.0f, 0.0f, arg[8], material, tint);
-            drawTilePrimitive(util, nullptr, arg[2], 0.0f, width, height, 0.0f, 0.0f, 0.0f, 0.0f, arg[8], material, tint);
-        }
-        else if (arg[1] > 0.0f)
-        {
+
+        if (arg[1] > 0.0f)
             drawTilePrimitive(util, nullptr, 0.0f, 0.0f, width, arg[1], 0.0f, 0.0f, 0.0f, 0.0f, arg[8], material, tint);
-            drawTilePrimitive(util, nullptr, 0.0f, arg[3], width, height, 0.0f, 0.0f, 0.0f, 0.0f, arg[8], material, tint);
-        }
+
+        if (arg[2] < width)
+            drawTilePrimitive(util, nullptr, std::floor(arg[2]), 0.0f, width, height, 0.0f, 0.0f, 0.0f, 0.0f, arg[8], material, tint);
+
+        if (arg[3] < height)
+            drawTilePrimitive(util, nullptr, 0.0f, std::floor(arg[3]), width, height, 0.0f, 0.0f, 0.0f, 0.0f, arg[8], material, tint);
     }
 
     struct D3DViewport { uint32_t x, y, width, height; float minZ, maxZ; };
