@@ -41,4 +41,7 @@ namespace Script
 
     // True when the object's class is this one or anything derived from it.
     bool IsA(void* object, const wchar_t* className);
+
+    // True when the object's outermost package is this one. Tells a mod's asset from a stock one.
+    bool InPackage(void* object, const wchar_t* packageName);
 }

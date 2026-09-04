@@ -144,6 +144,7 @@ namespace
     float     roseOffset = 0.0f;
     bool      roseText = false;
     bool      virtualSize = false;
+    bool      modScript = false;
     uintptr_t base  = 0;
     uintptr_t limit = 0;
 
@@ -249,25 +250,23 @@ namespace
 
     // Confining leaves the strips showing world, so they are filled with black tiles through the
     // same primitive. These re-enter the hook and pass through: the return address is in this dll.
-    // The source rect is degenerate, so the strip uses the overlay's corner texel extended outward.
-    // White leaves that texel unchanged, which excludes ADS overlays that are not fullscreen.
     //
     // CenterOptics leaves the far edges just short of the viewport, so floor them to cover the boundary pixel.
-    void FillOutside(void* util, float* arg, float width, float height, uint32_t tint)
+    void FillOutside(void* util, float* arg, float width, float height)
     {
         auto material = reinterpret_cast<void**>(arg)[9];
 
         if (arg[0] > 0.0f)
-            drawTilePrimitive(util, nullptr, 0.0f, 0.0f, arg[0], height, 0.0f, 0.0f, 0.0f, 0.0f, arg[8], material, tint);
+            drawTilePrimitive(util, nullptr, 0.0f, 0.0f, arg[0], height, 0.0f, 0.0f, 0.0f, 0.0f, arg[8], material, 0xff000000);
 
         if (arg[1] > 0.0f)
-            drawTilePrimitive(util, nullptr, 0.0f, 0.0f, width, arg[1], 0.0f, 0.0f, 0.0f, 0.0f, arg[8], material, tint);
+            drawTilePrimitive(util, nullptr, 0.0f, 0.0f, width, arg[1], 0.0f, 0.0f, 0.0f, 0.0f, arg[8], material, 0xff000000);
 
         if (arg[2] < width)
-            drawTilePrimitive(util, nullptr, std::floor(arg[2]), 0.0f, width, height, 0.0f, 0.0f, 0.0f, 0.0f, arg[8], material, tint);
+            drawTilePrimitive(util, nullptr, std::floor(arg[2]), 0.0f, width, height, 0.0f, 0.0f, 0.0f, 0.0f, arg[8], material, 0xff000000);
 
         if (arg[3] < height)
-            drawTilePrimitive(util, nullptr, 0.0f, std::floor(arg[3]), width, height, 0.0f, 0.0f, 0.0f, 0.0f, arg[8], material, tint);
+            drawTilePrimitive(util, nullptr, 0.0f, std::floor(arg[3]), width, height, 0.0f, 0.0f, 0.0f, 0.0f, arg[8], material, 0xff000000);
     }
 
     struct D3DViewport { uint32_t x, y, width, height; float minZ, maxZ; };
@@ -481,6 +480,14 @@ namespace
             auto width = arg[2];
             auto height = arg[3];
 
+            // Any reticle drawn later this frame is inside the optic
+            optics = optics || !device;
+
+            // Ubisoft's overlays all live in Inventory_t and are 4:3. Supply Drops uses
+            // their own widescreen layout.
+            if (!device && !Script::InPackage(reinterpret_cast<void**>(arg)[9], L"Inventory_t"))
+                return;
+
             // Optics passes use a USize - 1 source rect, shifting the texture center by half a texel
             // Device vignettes use a separate call site and are left unchanged
             if (bCenterOptics && !device)
@@ -493,14 +500,11 @@ namespace
                 arg[3] -= 0.5f;
             }
 
-            // Any reticle drawn later this frame is inside the optic
-            optics = optics || !device;
-
             ConfineTo43(arg);
 
             // Once per mode is enough, and the mask is the first of its pair.
             if (device || rva == ScopeMask || rva == ThermalMask)
-                FillOutside(reinterpret_cast<void*>(ctx.ecx), arg, width, height, device ? 0xff000000 : 0xffffffff);
+                FillOutside(reinterpret_cast<void*>(ctx.ecx), arg, width, height);
         }
     }
 
@@ -817,7 +821,7 @@ namespace
     {
         auto viewport = *reinterpret_cast<uint8_t**>(self + Viewport);
 
-        if (bUse && viewport)
+        if (bUse && viewport && !modScript)
         {
             auto sizeX = *reinterpret_cast<int32_t*>(viewport + ViewportSizeX);
             auto sizeY = *reinterpret_cast<int32_t*>(viewport + ViewportSizeY);
@@ -874,11 +878,17 @@ namespace
 
     void __fastcall ExecUseVirtualSize(void* self, void* edx, uint8_t* stack, void* result)
     {
+        auto node = *reinterpret_cast<void**>(stack + 0x4);
         auto object = *reinterpret_cast<void**>(stack + 0x8);
+
+        // Stock game use 4:3 layouts, Supply Drop already account for widescreen.
+        modScript = !Script::InPackage(node, L"R6Weapons") && !Script::InPackage(node, L"R6Game")
+                 && !Script::InPackage(node, L"R6Engine") && !Script::InPackage(node, L"R6Menu");
 
         reticule = Script::IsA(object, L"R6CrossReticule") || Script::IsA(object, L"R6WithWeaponReticule") ? object : nullptr;
         shExecUseVirtualSize.thiscall<void>(self, stack, result);
         reticule = nullptr;
+        modScript = false;
     }
 
     void __fastcall ExecDrawTile(void* self, void* edx, uint8_t* stack, void* result)

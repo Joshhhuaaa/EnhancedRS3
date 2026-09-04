@@ -5,6 +5,7 @@ namespace
 {
     constexpr int FNAME_Find = 0;
 
+    constexpr size_t kObjectOuter    = 0x18;
     constexpr size_t kObjectClass    = 0x24;
     constexpr size_t kFieldName      = 0x20;
     constexpr size_t kFieldSuper     = 0x2c;
@@ -147,4 +148,20 @@ bool Script::IsA(void* object, const wchar_t* className)
             return true;
 
     return false;
+}
+
+bool Script::InPackage(void* object, const wchar_t* packageName)
+{
+    if (!object || !Resolve())
+        return false;
+
+    int fname = 0;
+    s_fnameCtor(&fname, packageName, FNAME_Find);
+    if (!fname)
+        return false;
+
+    while (void* outer = Read<void*>(object, kObjectOuter))
+        object = outer;
+
+    return Read<int>(object, kFieldName) == fname;
 }
