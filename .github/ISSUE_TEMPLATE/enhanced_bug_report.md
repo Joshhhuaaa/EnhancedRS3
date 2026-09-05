@@ -15,7 +15,7 @@ assignees: ''
 
 ## Log Files:
 
-<!-- Please include your EnhancedRS3 log file (it is located in Rainbow Six 3 Gold\system\logs).-->
+<!-- Please include your EnhancedRS3 log file (it is located in Rainbow Six 3 Gold\system\plugins).-->
 <!-- Just drag the files themselves directly onto this box to upload them, no need to copy/paste the contents manually.-->
 <!-- Your issue report may be closed if you do not include your log files.-->
 
