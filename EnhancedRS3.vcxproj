@@ -76,6 +76,7 @@
     <ClCompile Include="src\features\shadow_resolution.cpp" />
     <ClCompile Include="src\features\skip_intro.cpp" />
     <ClCompile Include="src\features\spark_throttle.cpp" />
+    <ClCompile Include="src\features\window_drift.cpp" />
     <ClCompile Include="src\features\zoom_ramp.cpp" />
   </ItemGroup>
   <ItemGroup Label="External">

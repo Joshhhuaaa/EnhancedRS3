@@ -66,6 +66,9 @@
     <ClCompile Include="src\features\menu_resolution.cpp">
       <Filter>features</Filter>
     </ClCompile>
+    <ClCompile Include="src\features\window_drift.cpp">
+      <Filter>features</Filter>
+    </ClCompile>
     <ClCompile Include="src\features\zoom_ramp.cpp">
       <Filter>features</Filter>
     </ClCompile>
