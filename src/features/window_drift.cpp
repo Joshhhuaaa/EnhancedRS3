@@ -10,6 +10,7 @@ namespace
 
     constexpr LONG MinVisibleX = 120;
     constexpr LONG CaptionBand = 32;
+    constexpr LONG MinCaptionY = 16;    // tolerates the Win10/11 top overhang
 
     SafetyHookInline shVerifyPosition{};
     SafetyHookInline shOnDestroy{};
@@ -19,16 +20,48 @@ namespace
         return *reinterpret_cast<HWND*>(static_cast<uint8_t*>(window) + Handle);
     }
 
-    // Clamps the origin only, so an oversized window can still run off the right and the
-    // bottom - the stock code does the same.
-    void ClampToWorkArea(LONG& x, LONG& y)
+    // Only the caption strip counts, a window off the top edge has ample overlap but no
+    // grabbable title bar. DEFAULTTONULL is load bearing, NEAREST never fails.
+    bool UsablyVisible(const RECT& rect)
     {
-        RECT work{ 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN) };
+        RECT caption{ rect.left, rect.top, rect.right, rect.top + CaptionBand };
         MONITORINFO info{ sizeof(info) };
-        POINT point{ x, y };
 
-        if (auto monitor = MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST); monitor && GetMonitorInfoW(monitor, &info))
-            work = info.rcWork;
+        auto monitor = MonitorFromRect(&caption, MONITOR_DEFAULTTONULL);
+        if (!monitor || !GetMonitorInfoW(monitor, &info))
+            return false;
+
+        RECT visible{};
+        if (!IntersectRect(&visible, &caption, &info.rcWork))
+            return false;
+
+        return visible.right - visible.left >= MinVisibleX
+            && visible.bottom - visible.top >= MinCaptionY;
+    }
+
+    // Prefer the owner's monitor so a rescued dialog lands on the same display as its frame.
+    RECT FallbackWorkArea(HWND owner)
+    {
+        MONITORINFO info{ sizeof(info) };
+
+        if (owner && IsWindow(owner))
+            if (auto monitor = MonitorFromWindow(owner, MONITOR_DEFAULTTONULL); monitor && GetMonitorInfoW(monitor, &info))
+                return info.rcWork;
+
+        if (auto monitor = MonitorFromPoint(POINT{ 0, 0 }, MONITOR_DEFAULTTOPRIMARY); monitor && GetMonitorInfoW(monitor, &info))
+            return info.rcWork;
+
+        return { 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN) };
+    }
+
+    // Far edges first, or a window that fits is left jammed against the edge. The origin
+    // clamp still lets an oversized window run off the right and the bottom, as stock does.
+    void ClampToWorkArea(const RECT& work, LONG& x, LONG& y, LONG width, LONG height)
+    {
+        if (width <= work.right - work.left && x + width > work.right)
+            x = work.right - width;
+        if (height <= work.bottom - work.top && y + height > work.bottom)
+            y = work.bottom - height;
 
         auto maxX = work.right - MinVisibleX;
         auto maxY = work.bottom - CaptionBand;
@@ -55,9 +88,14 @@ namespace
         RECT rect{};
         ::GetWindowRect(window, &rect);
 
+        // Rescue only. Stock snapped any window on a second monitor back to the primary.
+        if (UsablyVisible(rect))
+            return;
+
         auto x = rect.left;
         auto y = rect.top;
-        ClampToWorkArea(x, y);
+        ClampToWorkArea(FallbackWorkArea(GetWindow(window, GW_OWNER)), x, y,
+                        rect.right - rect.left, rect.bottom - rect.top);
 
         if (x != rect.left || y != rect.top)
             SetWindowPos(window, nullptr, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOSENDCHANGING);
