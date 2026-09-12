@@ -1,4 +1,4 @@
-#include "d3dx9.hpp"
+﻿#include "d3dx9.hpp"
 #include "color.hpp"
 #include "ini.hpp"
 
@@ -16,7 +16,7 @@ namespace
 	bool Enabled = false;
 	bool Configured = false;
 	bool InitFailed = false;
-	bool FrameDirty = true;
+	bool Restore = false;
 
 	// Brightness, contrast and saturation, straight into c0
 	float Grade[4] = { 1.0f, 1.0f, 1.0f, 0.0f };
@@ -63,6 +63,7 @@ namespace
 			StateBlock = nullptr;
 		}
 
+		Restore = false;
 		PostWidth = PostHeight = 0;
 	}
 
@@ -264,6 +265,8 @@ namespace
 				Device->SetPixelShaderConstantF(0, Grade, 1);
 				Device->SetTexture(0, SceneCopy);
 				Device->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, Quad, sizeof(ColorVertex));
+
+				Restore = true;
 			}
 
 			Device->EndScene();
@@ -286,11 +289,6 @@ namespace
 	}
 }
 
-void Color::OnDraw()
-{
-	FrameDirty = true;
-}
-
 void Color::OnPresent(IDirect3DDevice9 *Device)
 {
 	if (!Configured)
@@ -309,13 +307,32 @@ void Color::OnPresent(IDirect3DDevice9 *Device)
 			COLOR_LOG("off");
 	}
 
-	// Nothing drawn since the last Present means a loading screen or an idle menu presenting
-	// the same finished frame in a loop, and the pass writes back into the backbuffer, so
-	// re-running it would grade an already-graded image
-	if (Enabled && !InitFailed && FrameDirty)
+	if (Enabled && !InitFailed)
 		Apply(Device);
+}
 
-	FrameDirty = false;
+void Color::OnPostPresent(IDirect3DDevice9 *Device)
+{
+	// The chain is SWAPEFFECT_COPY and the game reuses what is left in the backbuffer. The gas
+	// and motion blur effects blend the previous frame back in, so a graded backbuffer becomes
+	// an input to the next frame and the grade compounds until everything clips
+	if (!Restore)
+		return;
+
+	Restore = false;
+
+	IDirect3DSurface9 *BackBuffer = nullptr;
+	if (FAILED(Device->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &BackBuffer)) || BackBuffer == nullptr)
+		return;
+
+	IDirect3DSurface9 *SceneSurf = nullptr;
+	if (SUCCEEDED(SceneCopy->GetSurfaceLevel(0, &SceneSurf)))
+	{
+		Device->StretchRect(SceneSurf, nullptr, BackBuffer, nullptr, D3DTEXF_NONE);
+		SceneSurf->Release();
+	}
+
+	BackBuffer->Release();
 }
 
 void Color::OnDeviceLost()

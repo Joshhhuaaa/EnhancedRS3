@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Copyright (C) 2015 Patrick Mours. All rights reserved.
  * License: https://github.com/crosire/d3d8to9#license
  */
@@ -283,6 +283,8 @@ HRESULT STDMETHODCALLTYPE Direct3DDevice8::Present(const RECT *pSourceRect, cons
 		pSourceRect = pDestRect = nullptr; // MSAA
 
 	const HRESULT hr = ProxyInterface->Present(pSourceRect, pDestRect, hDestWindowOverride, nullptr);
+
+	Color::OnPostPresent(ProxyInterface); // COLOR
 
 #ifndef D3D8TO9NOLOG
 	static HRESULT LastPresentResult = D3D_OK;
@@ -1189,7 +1191,6 @@ HRESULT STDMETHODCALLTYPE Direct3DDevice8::DrawPrimitive(D3DPRIMITIVETYPE Primit
 {
 	ApplyClipPlanes();
 	Smaa::OnDraw(); // SMAA
-	Color::OnDraw(); // COLOR
 	ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
 	return D3D_OK;
 }
@@ -1197,7 +1198,6 @@ HRESULT STDMETHODCALLTYPE Direct3DDevice8::DrawIndexedPrimitive(D3DPRIMITIVETYPE
 {
 	ApplyClipPlanes();
 	Smaa::OnDraw(); // SMAA
-	Color::OnDraw(); // COLOR
 	ProxyInterface->DrawIndexedPrimitive(PrimitiveType, CurrentBaseVertexIndex, MinIndex, NumVertices, StartIndex, PrimitiveCount);
 	return D3D_OK;
 }
@@ -1205,7 +1205,6 @@ HRESULT STDMETHODCALLTYPE Direct3DDevice8::DrawPrimitiveUP(D3DPRIMITIVETYPE Prim
 {
 	ApplyClipPlanes();
 	Smaa::OnDraw(); // SMAA
-	Color::OnDraw(); // COLOR
 	ProxyInterface->DrawPrimitiveUP(PrimitiveType, PrimitiveCount, pVertexStreamZeroData, VertexStreamZeroStride);
 	return D3D_OK;
 }
@@ -1213,7 +1212,6 @@ HRESULT STDMETHODCALLTYPE Direct3DDevice8::DrawIndexedPrimitiveUP(D3DPRIMITIVETY
 {
 	ApplyClipPlanes();
 	Smaa::OnDraw(); // SMAA
-	Color::OnDraw(); // COLOR
 	ProxyInterface->DrawIndexedPrimitiveUP(PrimitiveType, MinVertexIndex, NumVertexIndices, PrimitiveCount, pIndexData, IndexDataFormat, pVertexStreamZeroData, VertexStreamZeroStride);
 	return D3D_OK;
 }
