@@ -483,9 +483,12 @@ namespace
             // Any reticle drawn later this frame is inside the optic
             optics = optics || !device;
 
+            // The tile's material is a transient FinalBlend, so the overlay is its Material.
             // Ubisoft's overlays all live in Inventory_t and are 4:3. Supply Drops uses
             // their own widescreen layout.
-            if (!device && !Script::InPackage(reinterpret_cast<void**>(arg)[9], L"Inventory_t"))
+            auto source = Script::Field(reinterpret_cast<void**>(arg)[9], L"Material");
+
+            if (!device && (!source || !Script::InPackage(*static_cast<void**>(source), L"Inventory_t")))
                 return;
 
             // Optics passes use a USize - 1 source rect, shifting the texture center by half a texel
