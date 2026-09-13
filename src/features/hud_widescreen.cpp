@@ -4,7 +4,7 @@
 #include "feature.hpp"
 #include "script.hpp"
 
-static constexpr bool bWidescreenHUD = true;    // Prevents the HUD, reticules and scope overlay from stretching on widescreen
+static constexpr bool bWidescreenHUD = true;    // Prevents the HUD, reticles and scope overlay from stretching on widescreen
 static constexpr float fHUDScale     = 1.0f;    // 0 is the stock native size, 1 matches the 640x480 proportions
 
 static Config::Value bCenterOptics("HUD", "CenterOptics", true);
@@ -112,6 +112,7 @@ namespace
     SafetyHookInline shWrappedPrint{};
     SafetyHookInline shUseVirtualSize{};
     SafetyHookInline shExecUseVirtualSize{};
+    SafetyHookInline shReticuleUpdate{};
     SafetyHookInline shExecDrawTile{};
     SafetyHookInline shExecDrawText{};
     SafetyHookInline shExecStrLen{};
@@ -136,7 +137,8 @@ namespace
     uint8_t*  hud   = nullptr;
     void*     reticule = nullptr;
     void*     aiming   = nullptr;
-    bool      optics   = false;
+    float     viewX  = 0.0f;
+    float     viewY  = 0.0f;
     bool      zoomed   = false;
     bool      dot      = false;
     void*     rose = nullptr;
@@ -248,10 +250,7 @@ namespace
         }
     }
 
-    // Confining leaves the strips showing world, so they are filled with black tiles through the
-    // same primitive. These re-enter the hook and pass through: the return address is in this dll.
-    //
-    // CenterOptics leaves the far edges just short of the viewport, so floor them to cover the boundary pixel.
+    // Confining leaves the strips showing world, so they are filled with black tiles through the same primitive
     void FillOutside(void* util, float* arg, float width, float height)
     {
         auto material = reinterpret_cast<void**>(arg)[9];
@@ -321,15 +320,27 @@ namespace
         auto width = static_cast<float>(viewport.width);
         auto height = static_cast<float>(viewport.height);
 
-        // 4:3 and narrower is already round; the early out leaves those resolutions untouched.
-        if (width * 3.0f <= height * 4.0f)
+        auto confine = width * 3.0f > height * 4.0f;
+
+        if (!confine && !bCenterOptics)
             return;
+
+        std::copy(std::begin(Identity), std::end(Identity), std::begin(coneWorld));
 
         // The quad loses its topmost row and leftmost column to the sample grid, and those pixels
         // then show the scene the pass never touched. A pixel of overhang each way takes them back.
-        std::copy(std::begin(Identity), std::end(Identity), std::begin(coneWorld));
-        coneWorld[0] = (height * 4.0f / 3.0f + 2.0f) / width;
-        coneWorld[5] = (height + 2.0f) / height;
+        if (confine)
+        {
+            coneWorld[0] = (height * 4.0f / 3.0f + 2.0f) / width;
+            coneWorld[5] = (height + 2.0f) / height;
+        }
+
+        // Shift by half a pixel to match FCanvasUtil::DrawTile's alignment
+        if (bCenterOptics)
+        {
+            coneWorld[12] = -1.0f / width;
+            coneWorld[13] = 1.0f / height;
+        }
 
         ConeWorld(ctx.esi, coneWorld);
         bVisionCone = true;
@@ -480,9 +491,6 @@ namespace
             auto width = arg[2];
             auto height = arg[3];
 
-            // Any reticle drawn later this frame is inside the optic
-            optics = optics || !device;
-
             // The tile's material is a transient FinalBlend, so the overlay is its Material.
             // Ubisoft's overlays all live in Inventory_t and are 4:3. Supply Drops uses
             // their own widescreen layout.
@@ -497,10 +505,6 @@ namespace
             {
                 arg[6] += 1.0f;
                 arg[7] += 1.0f;
-                arg[0] -= 0.5f;
-                arg[1] -= 0.5f;
-                arg[2] -= 0.5f;
-                arg[3] -= 0.5f;
             }
 
             ConfineTo43(arg);
@@ -846,9 +850,7 @@ namespace
         if (reticule && !bUse)
         {
             aiming = reticule;
-            zoomed = optics;
             dot = Script::IsA(reticule, L"R6WithWeaponReticule");
-            optics = false;
         }
         else if (!reticule)
         {
@@ -857,26 +859,37 @@ namespace
 
         if (reticule && fHUDScale && !bUse && viewport)
         {
-            auto sizeX = static_cast<float>(*reinterpret_cast<int32_t*>(viewport + ViewportSizeX));
-            auto sizeY = static_cast<float>(*reinterpret_cast<int32_t*>(viewport + ViewportSizeY));
-            auto scale = HUDScale(sizeY);
+            viewX = static_cast<float>(*reinterpret_cast<int32_t*>(viewport + ViewportSizeX));
+            viewY = static_cast<float>(*reinterpret_cast<int32_t*>(viewport + ViewportSizeY));
 
-            // R6WithWeaponReticule never backs its half line width off, so its cross sits down and right
-            auto nudgeX = 0.0f;
-            auto nudgeY = 0.0f;
-
-            if (Script::IsA(reticule, L"R6WithWeaponReticule"))
-            {
-                nudgeX = sizeX / ReticuleWidth + 0.5f;
-                nudgeY = sizeY / ReticuleHeight + 0.5f;
-            }
-
-            *reinterpret_cast<float*>(self + StretchX) = scale;
-            *reinterpret_cast<float*>(self + StretchY) = scale;
-
-            Script::Set<float>(reticule, L"m_fReticuleOffsetX", sizeX * 0.5f / scale - nudgeX);
-            Script::Set<float>(reticule, L"m_fReticuleOffsetY", sizeY * 0.5f / scale - nudgeY);
+            *reinterpret_cast<float*>(self + StretchX) = HUDScale(viewY);
+            *reinterpret_cast<float*>(self + StretchY) = HUDScale(viewY);
         }
+    }
+
+    // Keep the original reticle position in viewport pixels or auto aim breaks
+    void __fastcall ReticuleUpdate(void* self, void* edx, void* controller, float accuracy)
+    {
+        shReticuleUpdate.thiscall<void>(self, controller, accuracy);
+
+        // R6WithWeaponDotReticule.PostRender uses this to determine whether the optic is up
+        zoomed = Script::GetBool(controller, L"m_bHelmetCameraOn");
+
+        auto weapon = Script::IsA(self, L"R6WithWeaponReticule");
+
+        if (!fHUDScale || !viewY || !(weapon || Script::IsA(self, L"R6CrossReticule")))
+            return;
+
+        auto lockX = static_cast<float*>(Script::Field(controller, L"m_fCurrRetPosX"));
+        auto lockY = static_cast<float*>(Script::Field(controller, L"m_fCurrRetPosY"));
+
+        // Zero until R6PlayerController.Tick first reaches its own UpdateReticule, which waits on the pawn
+        auto x = lockX && *lockX != 0.0f ? *lockX : viewX * 0.5f;
+        auto y = lockY && *lockY != 0.0f ? *lockY : viewY * 0.5f;
+        auto scale = HUDScale(viewY);
+
+        Script::Set<float>(self, L"m_fReticuleOffsetX", x / scale - (weapon ? viewX / ReticuleWidth + 0.5f : 0.0f));
+        Script::Set<float>(self, L"m_fReticuleOffsetY", y / scale - (weapon ? viewY / ReticuleHeight + 0.5f : 0.0f));
     }
 
     void __fastcall ExecUseVirtualSize(void* self, void* edx, uint8_t* stack, void* result)
@@ -1051,7 +1064,23 @@ FEATURE(R6Game, WidescreenHUD)
     spdlog::info("WidescreenHUD: HUD scaled uniformly and anchored to the screen edges");
 }
 
-// D3DDrv cone feature - function exported, four sites are base + RVA
+FEATURE(R6Weapons, WidescreenReticle)
+{
+    if (!bWidescreenHUD)
+        return;
+
+    auto updateReticule = GetProcAddress(GetModuleHandleW(L"R6Weapons"), "?UpdateReticule@AR6Reticule@@QAEXPAVAR6PlayerController@@M@Z");
+
+    if (!updateReticule)
+    {
+        spdlog::error("WidescreenReticle: AR6Reticule::UpdateReticule not found, the reticle will remain in viewport pixels");
+        return;
+    }
+
+    shReticuleUpdate = safetyhook::create_inline(updateReticule, ReticuleUpdate);
+    spdlog::info("WidescreenReticle: reticle position scaled with the HUD");
+}
+
 FEATURE(D3DDrv, WidescreenVisionCone)
 {
     if (!bWidescreenHUD)
