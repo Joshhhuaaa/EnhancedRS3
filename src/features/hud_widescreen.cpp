@@ -145,6 +145,7 @@ namespace
     float     roseScale = 1.0f;
     float     roseOffset = 0.0f;
     bool      roseText = false;
+    uint8_t*  stretched = nullptr;
     bool      virtualSize = false;
     bool      modScript = false;
     uintptr_t base  = 0;
@@ -819,6 +820,7 @@ namespace
 
     void __fastcall SetStretch(void* self, void* edx, float x, float y)
     {
+        stretched = hud ? static_cast<uint8_t*>(self) : nullptr;
         shSetStretch.thiscall<void>(self, hud ? y : x, y);
     }
 
@@ -982,11 +984,17 @@ namespace
         *orgX = previousOrgX;
     }
 
+    // Apply the uniform stretch so HUD elements drawn by scripts use the full widescreen viewport
     void __fastcall DrawNativeHUD(void* self, void* edx, void* frame, void* result)
     {
         hud = static_cast<uint8_t*>(self);
         shDrawNativeHUD.thiscall<void>(self, frame, result);
+
+        if (stretched)
+            *reinterpret_cast<float*>(stretched + StretchX) = Scale(ScaleX);
+
         hud = nullptr;
+        stretched = nullptr;
     }
 }
 
