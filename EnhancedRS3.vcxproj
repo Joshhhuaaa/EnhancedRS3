@@ -62,6 +62,7 @@
     <ClCompile Include="src\dllmain.cpp" />
     <ClCompile Include="src\features\alt_tab_crash.cpp" />
     <ClCompile Include="src\features\display_mode.cpp" />
+    <ClCompile Include="src\features\download_retry.cpp" />
     <ClCompile Include="src\features\eax_dsound.cpp" />
     <ClCompile Include="src\features\editor_tick_rate.cpp" />
     <ClCompile Include="src\features\fov.cpp" />
