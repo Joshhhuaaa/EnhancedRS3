@@ -9,7 +9,7 @@
 // ADSL  5000
 // Cable 4000 (default)
 // Modem 1500
-static constexpr bool    bForceNetSpeed = true;
+static constexpr bool    bForceNetSpeed = false; // OpenRVS will handle this now
 static constexpr int32_t iNetSpeed      = 480000;
 
 namespace

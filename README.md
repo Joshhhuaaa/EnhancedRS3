@@ -139,7 +139,7 @@ Hides the crosshair while zoomed, either hiding only the center dot or the entir
 Sets a maximum framerate. A value of `0` disables the limiter, `-1` matches the monitor's refresh rate, and any other value enables a hard cap at that value.
 
 ### Multiplayer
-- Net speed is forced to 480 kbps (24x the stock T1/T3 limit), providing plenty of bandwidth headroom for higher FPS. The in-game Connection Type setting is ignored, preventing a misconfigured setting from bottlenecking the connection.
+- Net speed improvements are included with [OpenRVS](https://github.com/OpenRVS-devs/OpenRVS), which defaults both clients and servers to 100 KB/s (5x the stock T1/T3 limit) and overrides the in-game Connection Type setting when joining.
 - Fixed an issue that caused hosting an online game session to freeze every 15 seconds as the server attempted to register with Ubi.com's master server.
 
 ### Bug Fixes
