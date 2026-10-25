@@ -9,6 +9,7 @@ namespace
         GameModule module;
         FeatureFn  fn;
         bool       editor;
+        bool       ucc;
     };
 
     std::vector<Entry>& List()
@@ -23,6 +24,7 @@ namespace
         {
         case GameModule::Core:          return L"Core.dll";
         case GameModule::Engine:        return L"Engine.dll";
+        case GameModule::Editor:        return L"Editor.dll";
         case GameModule::Fire:          return L"Fire.dll";
         case GameModule::IpDrv:         return L"IpDrv.dll";
         case GameModule::R6Abstract:    return L"R6Abstract.dll";
@@ -40,9 +42,9 @@ namespace
     }
 }
 
-Feature::Feature(GameModule module, FeatureFn fn, bool editor)
+Feature::Feature(GameModule module, FeatureFn fn, bool editor, bool ucc)
 {
-    List().push_back({ module, fn, editor });
+    List().push_back({ module, fn, editor, ucc });
 }
 
 void RegisterFeatures()
@@ -53,7 +55,7 @@ void RegisterFeatures()
     std::map<std::wstring, std::vector<FeatureFn>> byModule;
 
     for (auto& entry : List())
-        if (entry.editor || !bEditor)
+        if (bUCC ? entry.ucc : !entry.ucc && (entry.editor || !bEditor))
             byModule[ModuleName(entry.module)].push_back(entry.fn);
 
     for (auto& [name, fns] : byModule)

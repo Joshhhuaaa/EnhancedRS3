@@ -66,6 +66,9 @@
     <ClCompile Include="src\features\spark_throttle.cpp">
       <Filter>features</Filter>
     </ClCompile>
+    <ClCompile Include="src\features\ucc_make.cpp">
+      <Filter>features</Filter>
+    </ClCompile>
     <ClCompile Include="src\features\skip_intro.cpp">
       <Filter>features</Filter>
     </ClCompile>

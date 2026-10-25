@@ -5,6 +5,7 @@ inline std::filesystem::path sExePath;
 inline std::string sExeName;
 inline std::filesystem::path sAsiPath;
 inline bool bEditor = false;
+inline bool bUCC = false;
 
 // Tracks whether the game window currently owns mouse input
 inline bool bInputFocus = false;

@@ -183,8 +183,8 @@ namespace
 
 void Logging::Initialize()
 {
-    // The editor shares the plugins folder with the game, so it logs to its own file
-    auto logFile = sAsiPath / (bEditor ? APP_NAME ".UnrealEd.log" : APP_NAME ".log");
+    // The editor and UCC share the plugins folder with the game, so each logs to its own file
+    auto logFile = sAsiPath / (bEditor ? APP_NAME ".UnrealEd.log" : bUCC ? APP_NAME ".UCC.log" : APP_NAME ".log");
 
     try
     {

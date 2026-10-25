@@ -8,9 +8,8 @@ void Init()
 {
     InitPaths();
 
-    // UCC loads the asi too. Bail before touching the log, or whichever ran last
-    // owns it. UnrealEd gets its own log and only the EDITOR_FEATURE fixes.
-    if (_stricmp(sExeName.c_str(), "RavenShield.exe") != 0 && !bEditor)
+    // UnrealEd and UCC get their own logs and only the EDITOR_FEATURE / UCC_FEATURE fixes.
+    if (_stricmp(sExeName.c_str(), "RavenShield.exe") != 0 && !bEditor && !bUCC)
         return;
 
     Logging::Initialize();

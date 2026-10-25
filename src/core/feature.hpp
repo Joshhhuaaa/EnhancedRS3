@@ -7,6 +7,7 @@ enum class GameModule
     Startup,
     Core,
     Engine,
+    Editor,
     Fire,
     IpDrv,
     R6Abstract,
@@ -25,7 +26,7 @@ using FeatureFn = void(*)();
 
 struct Feature
 {
-    Feature(GameModule module, FeatureFn fn, bool editor = false);
+    Feature(GameModule module, FeatureFn fn, bool editor = false, bool ucc = false);
 };
 
 void RegisterFeatures();
@@ -39,4 +40,10 @@ void RegisterFeatures();
 #define EDITOR_FEATURE(module, name)                                \
     static void name();                                             \
     static Feature name##_Feature(GameModule::module, name, true);  \
+    static void name()
+
+// A fix that runs only under UCC.exe, which runs nothing else.
+#define UCC_FEATURE(module, name)                                         \
+    static void name();                                                   \
+    static Feature name##_Feature(GameModule::module, name, false, true); \
     static void name()
