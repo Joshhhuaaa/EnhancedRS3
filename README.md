@@ -17,7 +17,14 @@ The latest version of Enhanced RS3 can be found on the [Releases](https://github
 - You can adjust additional settings in `EnhancedRS3.ini` located in the `system\plugins` folder.
 
 ## Uninstallation
-- Navigate to the `system` folder, delete the `plugins` folder, `d3d8.dll`, and `dinput8.dll`.
+To manually remove Enhanced RS3 from your game installation:
+- Navigate to the `system` folder, delete the `plugins` folder, `d3d8.dll`, and `winmm.dll`.
+
+This patch also includes [OpenRVS](https://github.com/OpenRVS-devs/OpenRVS).
+
+#### OpenRVS
+- Delete `OpenRVS.u`, `openrvs.ini`, `OpenRenderFix.u`, and `Servers.list`.
+- Delete `R6ClassDefines.ini`, then rename `R6ClassDefines.ini.bak` to `R6ClassDefines.ini`.
 
 ## Features
 ### Skip Intro
@@ -98,6 +105,22 @@ Enables SMAA to smooth jagged edges with a softer image. SMAA also smooths alpha
   </table>
 </div>
 
+### Shadow Resolution
+Allows shadow resolution to be increased from the stock 128x128 up to 2048x2048 for sharper shadows. `ShadowDetail` in the ini controls whether higher resolutions sharpen the shadow for more detail or keep the stock softness.
+
+<div align="center">
+  <table>
+    <tr>
+      <td width="50%"><img style="width:100%" src="https://github.com/user-attachments/assets/317c95d5-8214-4a31-a9d5-48410fbb666b"></td>
+      <td width="50%"><img style="width:100%" src="https://github.com/user-attachments/assets/061d1883-dec4-461b-a9af-121c2cdd117f"></td>
+    </tr>
+    <tr>
+      <td align="center">Stock</td>
+      <td align="center">Enhanced</td>
+    </tr>
+  </table>
+</div>
+
 ### EAX Audio Support
 Allows local DirectSound wrappers such as ALchemy and [DSOAL](https://github.com/kcat/dsoal) to load correctly, enabling EAX audio without requiring a registry change. DSOAL is included with the patch.
 
@@ -139,10 +162,11 @@ Hides the crosshair while zoomed, either hiding only the center dot or the entir
 Sets a maximum framerate. A value of `0` disables the limiter, `-1` matches the monitor's refresh rate, and any other value enables a hard cap at that value.
 
 ### Multiplayer
-- Net speed improvements are included with [OpenRVS](https://github.com/OpenRVS-devs/OpenRVS), which defaults both clients and servers to 100 KB/s (5x the stock T1/T3 limit) and overrides the in-game Connection Type setting when joining.
+- Ubisoft discontinued Raven Shield's servers in 2016. [OpenRVS](https://github.com/OpenRVS-devs/OpenRVS) is included to restore online play, replacing the Ubi.com server browser with a new server list and removing the Ubi.com login and CD key checks. Servers can also be joined directly by IP address.
 - Fixed an issue that caused hosting an online game session to freeze every 15 seconds as the server attempted to register with Ubi.com's master server.
 
 ### Bug Fixes
 - Fixed the long delay when making selections during the Planning Phase or in UnrealEd on modern hardware.
 - Fixed crashes that could occur when alt-tabbing out of the game while in fullscreen, particularly when an overlay such as RivaTuner was hooked.
 - Fixed weapon zoom snapping in instantly at high framerates. The FOV transition is now smooth and consistent at any framerate.
+- Fixed a bug where the player's own shadow would disappear after pausing or restarting a level.
