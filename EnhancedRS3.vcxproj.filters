@@ -10,6 +10,9 @@
     <Filter Include="external">
       <UniqueIdentifier>{1a1b0c00-0001-4000-8000-000000000003}</UniqueIdentifier>
     </Filter>
+    <Filter Include="shaders">
+      <UniqueIdentifier>{1a1b0c00-0001-4000-8000-000000000004}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\core\stdafx.cpp">
@@ -46,6 +49,9 @@
       <Filter>features</Filter>
     </ClCompile>
     <ClCompile Include="src\features\net_speed.cpp">
+      <Filter>features</Filter>
+    </ClCompile>
+    <ClCompile Include="src\features\own_shadow.cpp">
       <Filter>features</Filter>
     </ClCompile>
     <ClCompile Include="src\features\master_server.cpp">
@@ -147,6 +153,17 @@
     <ClInclude Include="src\core\version.h">
       <Filter>core</Filter>
     </ClInclude>
+    <ClInclude Include="src\shaders\shadow_blur_ps.h">
+      <Filter>shaders</Filter>
+    </ClInclude>
+    <ClInclude Include="src\shaders\shadow_blur_vs.h">
+      <Filter>shaders</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="src\shaders\shadow_blur.hlsl">
+      <Filter>shaders</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="src\core\EnhancedRS3.rc">

@@ -120,6 +120,11 @@
     <ClInclude Include="src\core\script.hpp" />
     <ClInclude Include="src\core\stdafx.h" />
     <ClInclude Include="src\core\version.h" />
+    <ClInclude Include="src\shaders\shadow_blur_ps.h" />
+    <ClInclude Include="src\shaders\shadow_blur_vs.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="src\shaders\shadow_blur.hlsl" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="src\core\EnhancedRS3.rc" />
