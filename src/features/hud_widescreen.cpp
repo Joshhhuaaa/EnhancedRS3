@@ -6,6 +6,7 @@
 
 static constexpr bool bWidescreenHUD = true;    // Prevents the HUD, reticles and scope overlay from stretching on widescreen
 static constexpr float fHUDScale     = 1.0f;    // 0 is the stock native size, 1 matches the 640x480 proportions
+static constexpr bool bSharpText     = true;    // Draws enlarged text from a larger Rainbow6 size instead of magnifying a small bitmap font
 
 static Config::Value bCenterOptics("HUD", "CenterOptics", true);
 static Config::Value nHideCrosshairZoomed("HUD", "HideCrosshairWhenZoomed", 0);
@@ -19,12 +20,14 @@ namespace
     constexpr float ReticuleWidth  = 640.0f;
     constexpr float ReticuleHeight = 480.0f;
 
+    constexpr ptrdiff_t SpaceX      = 0x30;
     constexpr ptrdiff_t OrgX        = 0x38;
     constexpr ptrdiff_t OrgY        = 0x3c;
     constexpr ptrdiff_t ClipX       = 0x40;
     constexpr ptrdiff_t ClipY       = 0x44;
     constexpr ptrdiff_t CurX        = 0x50;
     constexpr ptrdiff_t CurY        = 0x54;
+    constexpr ptrdiff_t Style       = 0x5c;
     constexpr ptrdiff_t SizeX       = 0x6c;
     constexpr ptrdiff_t SizeY       = 0x70;
     constexpr ptrdiff_t Viewport    = 0x7c;
@@ -34,6 +37,7 @@ namespace
 
     constexpr ptrdiff_t ViewportSizeX = 0xa4;
     constexpr ptrdiff_t ViewportSizeY = 0xa8;
+    constexpr ptrdiff_t ViewportRI    = 0x164;
 
     constexpr ptrdiff_t ScaleX = 0x530;
     constexpr ptrdiff_t ScaleY = 0x534;
@@ -82,7 +86,38 @@ namespace
     constexpr uintptr_t ClipTextDraw     = 0x8ca27;
     constexpr uintptr_t EngineDrawFrom   = 0xaa6e0;
     constexpr uintptr_t EngineDrawTo     = 0xae6ea;
+    constexpr uintptr_t ProgressFrom     = 0xa1d60;
+    constexpr uintptr_t ProgressTo       = 0xa292d;
     constexpr uintptr_t TextSizeResult = 0x8bba0;
+
+    // UFont::Pages, and the glyph rects each page holds
+    constexpr ptrdiff_t FontPerPage  = 0x2c;
+    constexpr ptrdiff_t FontPages    = 0x30;
+    constexpr ptrdiff_t PageSize     = 0x14;
+    constexpr ptrdiff_t PageMaterial = 0x4;
+    constexpr ptrdiff_t PageGlyphs   = 0x8;
+    constexpr ptrdiff_t GlyphSize    = 0x10;
+    constexpr ptrdiff_t GlyphVSize   = 0xc;
+
+    // Where the ink of an 'H' sits in each cell, measured from the glyph images in R6Font.utx. The cell
+    // heights do not scale in step with the ink, so sizes are matched on these rows.
+    struct FontInk { const wchar_t* name; int capTop; int baseline; };
+
+    // Rainbow6 ships at these sizes, smallest first
+    constexpr FontInk Rainbow6[] =
+    {
+        { L"R6Font.Rainbow6_12pt", 2,  9 }, { L"R6Font.Rainbow6_14pt", 3, 11 }, { L"R6Font.Rainbow6_15pt", 3, 12 },
+        { L"R6Font.Rainbow6_17pt", 3, 13 }, { L"R6Font.Rainbow6_22pt", 5, 17 }, { L"R6Font.Rainbow6_36pt", 7, 28 },
+    };
+
+    // The console and message lists' font, a plainer face with no other sizes, and the Rainbow6 size
+    // with the same line height that the canvas hands out in its place
+    constexpr const wchar_t* SmallFont = L"R6Font.SmallFont";
+    constexpr size_t SmallFontStandIn = 1;
+
+    // UCanvas Font and SmallFont
+    constexpr ptrdiff_t CanvasFont      = 0x2c;
+    constexpr ptrdiff_t CanvasSmallFont = 0x74;
 
     // R6MenuInGameInstructionWidget.uc's default m_fYInstructionTextPos, in 640x480 units.
     constexpr float InstructionTop = 35.0f;
@@ -117,6 +152,7 @@ namespace
     SafetyHookInline shExecDrawText{};
     SafetyHookInline shExecStrLen{};
     SafetyHookInline shDrawStringWorker{};
+    SafetyHookInline shCanvasUpdate{};
     SafetyHookMid mhClipTextNative{};
     SafetyHookMid mhTextSize{};
     SafetyHookMid mhDrawTile{};
@@ -154,6 +190,24 @@ namespace
     uintptr_t engineBase = 0;
 
     void (__fastcall* drawTilePrimitive)(void*, void*, float, float, float, float, float, float, float, float, float, void*, uint32_t) = nullptr;
+
+    void* (__cdecl* staticFindObject)(void*, void*, const wchar_t*, int) = nullptr;
+    void* (__cdecl* fontClass)() = nullptr;
+    void  (__fastcall* addToRoot)(void*, void*) = nullptr;
+    uint16_t (__fastcall* remapChar)(void*, void*, wchar_t) = nullptr;
+    void* (__fastcall* colorFromPlane)(void*, void*, const float*) = nullptr;
+    void* (__fastcall* canvasUtil)(void*, void*, void*, void*, int, int) = nullptr;
+    void  (__fastcall* destroyCanvasUtil)(void*, void*) = nullptr;
+
+    // FCanvasUtil, one per font page
+    alignas(16) uint8_t utils[8][0xca8] = {};
+    bool sharpText = false;
+
+    struct TArray   { uint8_t* Data; int Num; int Max; };
+    struct FontSize { void* font; int height; };
+
+    FontSize sizes[std::size(Rainbow6)] = {};
+    FontSize smallFont = {};
 
     float shift    = 0.0f;
     bool  bShift   = false;
@@ -760,6 +814,221 @@ namespace
         *clipX = previousClipX;
     }
 
+    // The tallest glyph is the font's line height
+    int FontHeight(void* font)
+    {
+        auto& pages = *reinterpret_cast<TArray*>(static_cast<uint8_t*>(font) + FontPages);
+        auto height = 0;
+
+        for (int page = 0; page < pages.Num; page++)
+        {
+            auto& glyphs = *reinterpret_cast<TArray*>(pages.Data + page * PageSize + PageGlyphs);
+
+            for (int i = 0; i < glyphs.Num; i++)
+                height = std::max(height, *reinterpret_cast<int32_t*>(glyphs.Data + i * GlyphSize + GlyphVSize));
+        }
+
+        return height;
+    }
+
+    // Found rather than loaded, so nothing is pulled in mid-frame, and rooted so a map change cannot
+    // collect a size nothing else holds. A size not in memory yet is looked for again next string.
+    void FindSizes()
+    {
+        static bool complete = false;
+
+        if (complete || !staticFindObject || !fontClass || !addToRoot)
+            return;
+
+        auto find = [](FontSize& size, const wchar_t* name)
+        {
+            if (size.height)
+                return true;
+
+            if (!size.font)
+            {
+                // Each size's page textures sit in a group of the same name, so the class has to be given
+                size.font = staticFindObject(fontClass(), nullptr, name, 0);
+
+                if (size.font)
+                    addToRoot(size.font, nullptr);
+            }
+
+            // The linker creates a font before it loads it, so it can be found with no pages yet
+            size.height = size.font ? FontHeight(size.font) : 0;
+            return size.height != 0;
+        };
+
+        complete = find(smallFont, SmallFont);
+
+        for (size_t i = 0; i < std::size(Rainbow6); i++)
+            complete = find(sizes[i], Rainbow6[i].name) && complete;
+
+        if (complete)
+            spdlog::info("WidescreenHUD: Rainbow6 line heights {} {} {} {} {} {}, SmallFont {}",
+                         sizes[0].height, sizes[1].height, sizes[2].height, sizes[3].height, sizes[4].height, sizes[5].height,
+                         smallFont.height);
+    }
+
+    // The smallest size at least as tall as the text is drawn, since shrinking a bitmap keeps it sharp
+    // and enlarging it is what blurs. Past the largest size, the largest is enlarged instead.
+    const FontSize* Sharper(void* font, float stretch, const FontSize*& from)
+    {
+        FindSizes();
+
+        auto match = std::find_if(std::begin(sizes), std::end(sizes), [font](const FontSize& size) { return size.font == font; });
+
+        from = match != std::end(sizes) ? &*match : nullptr;
+
+        // Under a pixel of enlargement is not worth a different size
+        if (!font || !from || from->height * stretch < from->height + 1.0f)
+            return nullptr;
+
+        const FontSize* to = nullptr;
+
+        for (auto& size : sizes)
+        {
+            if (!size.font || size.height <= from->height)
+                continue;
+
+            to = &size;
+
+            if (size.height >= from->height * stretch)
+                break;
+        }
+
+        return to;
+    }
+
+    // The worker's lookup: remap, then page and slot by CharactersPerPage. Null where it draws nothing.
+    int32_t* Glyph(void* font, wchar_t c, int& page)
+    {
+        auto object = static_cast<uint8_t*>(font);
+        auto& pages = *reinterpret_cast<TArray*>(object + FontPages);
+        auto perPage = *reinterpret_cast<int32_t*>(object + FontPerPage);
+        auto index = static_cast<int>(remapChar(font, nullptr, c));
+
+        if (perPage <= 0 || index / perPage >= pages.Num)
+            return nullptr;
+
+        page = index / perPage;
+        auto entry = pages.Data + page * PageSize;
+        auto& glyphs = *reinterpret_cast<TArray*>(entry + PageGlyphs);
+        auto slot = index % perPage;
+
+        return *reinterpret_cast<void**>(entry) && slot < glyphs.Num
+             ? reinterpret_cast<int32_t*>(glyphs.Data + slot * GlyphSize)
+             : nullptr;
+    }
+
+    // Each glyph of the larger size is drawn on the requested glyph's cell at its own proportions, so the
+    // layout never moves however the string changes and the advances still add up as stock
+    int DrawSharp(uint8_t* canvas, void* font, int x, int y, const wchar_t* text,
+                  float r, float g, float b, float a, int i1, int i2, int i3)
+    {
+        auto at = [canvas](ptrdiff_t offset) { return *reinterpret_cast<float*>(canvas + offset); };
+        const FontSize* requested = nullptr;
+
+        // STY_None only measures, and an ampersand underlines the glyph after it
+        auto sharper = sharpText && canvas[Style] && !(i2 && wcschr(text, L'&')) ? Sharper(font, at(StretchY), requested) : nullptr;
+        auto pages = sharper ? reinterpret_cast<TArray*>(static_cast<uint8_t*>(sharper->font) + FontPages) : nullptr;
+
+        if (!sharper || pages->Num > static_cast<int>(std::size(utils)))
+            return shDrawStringWorker.ccall<int>(canvas, font, x, y, text, r, g, b, a, i1, i2, i3);
+
+        // The larger size's caps and baseline land on the requested size's
+        auto& requestedInk = Rainbow6[requested - sizes];
+        auto& sharperInk = Rainbow6[sharper - sizes];
+        auto ratio = static_cast<float>(requestedInk.baseline - requestedInk.capTop) / static_cast<float>(sharperInk.baseline - sharperInk.capTop);
+        auto drop = requestedInk.baseline - sharperInk.baseline * ratio;
+
+        auto viewport = *reinterpret_cast<uint8_t**>(canvas + Viewport);
+        auto ri = *reinterpret_cast<void**>(viewport + ViewportRI);
+        float plane[] = { r, g, b, a };
+        uint32_t color = 0;
+
+        colorFromPlane(&color, nullptr, plane);
+
+        // One per page, as the worker keeps them, so each page's glyphs batch together
+        for (int i = 0; i < pages->Num; i++)
+            canvasUtil(utils[i], nullptr, viewport, ri, 0, i == 0);
+
+        auto pen = 0;
+
+        for (auto c = text; *c; c++)
+        {
+            auto page = 0;
+            auto from = Glyph(font, *c, page);
+
+            if (!from)
+                continue;
+
+            auto to = Glyph(sharper->font, *c, page);
+
+            if (to)
+            {
+                auto left = x + pen + (from[2] - to[2] * ratio) * 0.5f;
+                auto top = y + drop;
+                auto right = left + to[2] * ratio;
+                auto bottom = top + to[3] * ratio;
+                auto u1 = static_cast<float>(to[0]);
+                auto v1 = static_cast<float>(to[1]);
+                auto u2 = u1 + to[2];
+                auto v2 = v1 + to[3];
+                auto clipX = at(ClipX), clipY = at(ClipY);
+                auto visible = !i1 || (right > 0.0f && left <= clipX && bottom > 0.0f && top <= clipY);
+
+                // Clipped as the worker clips, cropping the texels along with the glyph
+                if (i1 && visible)
+                {
+                    if (left < 0.0f)     { u1 -= left / ratio; left = 0.0f; }
+                    if (right > clipX)   { u2 -= (right - clipX) / ratio; right = clipX; }
+                    if (top < 0.0f)      { v1 -= top / ratio; top = 0.0f; }
+                    if (bottom > clipY)  { v2 -= (bottom - clipY) / ratio; bottom = clipY; }
+                }
+
+                if (visible)
+                    drawTilePrimitive(utils[page], nullptr,
+                                      (left + at(OrgX)) * at(StretchX), (top + at(OrgY)) * at(StretchY),
+                                      (right + at(OrgX)) * at(StretchX), (bottom + at(OrgY)) * at(StretchY),
+                                      u1, v1, u2, v2, 0.0f, *reinterpret_cast<void**>(pages->Data + page * PageSize + PageMaterial), color);
+            }
+
+            pen += i3 ? i3 : static_cast<int>(from[2] + at(SpaceX));
+        }
+
+        for (int i = 0; i < pages->Num; i++)
+            destroyCanvasUtil(utils[i], nullptr);
+
+        return pen;
+    }
+
+    // Canvas.Reset hands the canvas SmallFont every frame. Holding Rainbow6 of the same line height in its
+    // place makes the engine and the console measure and lay out with Rainbow6's own spacing, where drawing
+    // Rainbow6 on SmallFont's narrower advances crowded the glyphs together.
+    void __fastcall CanvasUpdate(uint8_t* self, void* edx)
+    {
+        shCanvasUpdate.thiscall<void>(self);
+
+        if (!sharpText)
+            return;
+
+        FindSizes();
+
+        auto& standIn = sizes[SmallFontStandIn];
+
+        if (!smallFont.font || !standIn.height)
+            return;
+
+        for (auto offset : { CanvasFont, CanvasSmallFont })
+        {
+            auto& font = *reinterpret_cast<void**>(self + offset);
+
+            if (font == smallFont.font)
+                font = standIn.font;
+        }
+    }
+
     // Glyphs are drawn through the worker; the return address is the slot below the first argument
     // because this is __cdecl and SafetyHook enters on the original frame.
     int __cdecl DrawStringPrimitive(uint8_t* canvas, void* font, int x, int y, const wchar_t* text,
@@ -776,8 +1045,12 @@ namespace
         // UWindow glyphs follow their root's scale, HUDScale only applies to viewport text
         auto scale = windowText ? windowScale : ViewportScale(canvas);
 
-        if (!viewport || scale == 1.0f || (!engineText && !windowText))
+        // NativeMenu repositions the loading screen's text inside the worker, in the requested font's units
+        if (rva >= ProgressFrom && rva < ProgressTo)
             return shDrawStringWorker.ccall<int>(canvas, font, x, y, text, r, g, b, a, i1, i2, i3);
+
+        if (!viewport || scale == 1.0f || (!engineText && !windowText))
+            return DrawSharp(canvas, font, x, y, text, r, g, b, a, i1, i2, i3);
 
         // The worker resolves a glyph as (X + OrgX) * StretchX, so the origin is inside the multiply
         // and comes down with the position. UWindow accumulates screen position into OrgX.
@@ -795,16 +1068,22 @@ namespace
         auto previousOrgX = *orgX;
         auto previousOrgY = *orgY;
 
+        // The worker takes whole units, so the division's remainder goes into the origin. Truncating it
+        // rounded toward zero, which dropped text at a negative offset (edit boxes shorter than their
+        // font) a whole unit.
+        auto unitX = x / scale;
+        auto unitY = y / scale;
+
         *stretchX = scale;
         *stretchY = scale;
         *clipX /= scale;
         *clipY /= scale;
-        *orgX /= scale;
-        *orgY /= scale;
+        *orgX = *orgX / scale + (unitX - std::floor(unitX));
+        *orgY = *orgY / scale + (unitY - std::floor(unitY));
 
-        auto result = shDrawStringWorker.ccall<int>(canvas, font,
-                                                    static_cast<int>(x / scale), static_cast<int>(y / scale),
-                                                    text, r, g, b, a, i1, i2, i3);
+        auto result = DrawSharp(canvas, font,
+                                static_cast<int>(std::floor(unitX)), static_cast<int>(std::floor(unitY)),
+                                text, r, g, b, a, i1, i2, i3);
 
         *orgX = previousOrgX;
         *orgY = previousOrgY;
@@ -1037,6 +1316,22 @@ FEATURE(R6Game, WidescreenHUD)
     engineBase = reinterpret_cast<uintptr_t>(engine);
     drawTilePrimitive = reinterpret_cast<decltype(drawTilePrimitive)>(drawTile);
 
+    auto core = GetModuleHandleW(L"Core");
+    staticFindObject = reinterpret_cast<decltype(staticFindObject)>(GetProcAddress(core, "?StaticFindObject@UObject@@SAPAV1@PAVUClass@@PAV1@PBGH@Z"));
+    addToRoot = reinterpret_cast<decltype(addToRoot)>(GetProcAddress(core, "?AddToRoot@UObject@@QAEXXZ"));
+    fontClass = reinterpret_cast<decltype(fontClass)>(GetProcAddress(engine, "?StaticClass@UFont@@SAPAVUClass@@XZ"));
+    remapChar = reinterpret_cast<decltype(remapChar)>(GetProcAddress(engine, "?RemapChar@UFont@@QAEGG@Z"));
+    colorFromPlane = reinterpret_cast<decltype(colorFromPlane)>(GetProcAddress(engine, "??0FColor@@QAE@ABVFPlane@@@Z"));
+    canvasUtil = reinterpret_cast<decltype(canvasUtil)>(GetProcAddress(engine, "??0FCanvasUtil@@QAE@PAVUViewport@@PAVFRenderInterface@@HH@Z"));
+    destroyCanvasUtil = reinterpret_cast<decltype(destroyCanvasUtil)>(GetProcAddress(engine, "??1FCanvasUtil@@QAE@XZ"));
+
+    sharpText = bSharpText && staticFindObject && addToRoot && fontClass && remapChar && colorFromPlane && canvasUtil && destroyCanvasUtil;
+
+    if (bSharpText && !sharpText)
+        spdlog::error("WidescreenHUD: StaticFindObject {}, AddToRoot {}, UFont::StaticClass {}, RemapChar {}, FColor {}, FCanvasUtil {} {} - enlarged text stays magnified",
+                      (void*)staticFindObject, (void*)addToRoot, (void*)fontClass, (void*)remapChar, (void*)colorFromPlane,
+                      (void*)canvasUtil, (void*)destroyCanvasUtil);
+
     shDrawNativeHUD = safetyhook::create_inline(drawNativeHUD, DrawNativeHUD);
     shSetStretch = safetyhook::create_inline(setStretch, SetStretch);
     shWrappedPrint = safetyhook::create_inline(wrappedPrint, WrappedPrint);
@@ -1062,6 +1357,14 @@ FEATURE(R6Game, WidescreenHUD)
                       (void*)execDrawTile, (void*)execDrawText, (void*)execStrLen);
 
     shDrawStringWorker = safetyhook::create_inline(reinterpret_cast<void*>(engineBase + DrawStringWorker), DrawStringPrimitive);
+
+    if (sharpText)
+    {
+        if (auto canvasUpdate = GetProcAddress(engine, "?Update@UCanvas@@UAEXXZ"))
+            shCanvasUpdate = safetyhook::create_inline(canvasUpdate, CanvasUpdate);
+        else
+            spdlog::error("WidescreenHUD: UCanvas::Update not found, the console keeps SmallFont");
+    }
 
     mhConsoleWrap = safetyhook::create_mid(reinterpret_cast<void*>(engineBase + ConsoleWrapTest), ConsoleWrap);
     mhMessageClip = safetyhook::create_mid(reinterpret_cast<void*>(engineBase + MessageClipWidth), MessageClip);
