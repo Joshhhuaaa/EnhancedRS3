@@ -31,7 +31,7 @@ This patch also includes [OpenRVS](https://github.com/OpenRVS-devs/OpenRVS).
 Skips the Ubisoft, Red Storm Entertainment, and intro videos for a faster launch into the game.
 
 ### Widescreen Support
-In the stock game, menus and cutscenes are hardcoded to render at 640x480, while the HUD stretches at widescreen aspect ratios. Enhanced RS3 renders menus and cutscenes at the in-game resolution and dynamically scales HUD elements to maintain their original proportions at any resolution.
+In the stock game, menus and cutscenes are hardcoded to render at 640x480, while the HUD stretches at widescreen aspect ratios. Enhanced RS3 renders menus and cutscenes at the in-game resolution and dynamically scales HUD elements to maintain their original proportions at any resolution. Text is drawn from the game's larger font sizes instead of being stretched, keeping it sharp at high resolutions.
 
 Field of view is calculated automatically based on the aspect ratio, widening the horizontal FOV while preserving the vertical FOV from 4:3. `FieldOfView` in the ini can turn this off for the stock projection, or force a specific horizontal FOV instead.
 
@@ -39,7 +39,7 @@ Field of view is calculated automatically based on the aspect ratio, widening th
   <table>
     <tr>
       <td width="50%"><img style="width:100%" src="https://github.com/user-attachments/assets/3e3145ec-ec33-4413-a376-d3f675d266f8"></td>
-      <td width="50%"><img style="width:100%" src="https://github.com/user-attachments/assets/fc601135-b39d-4558-9945-ca6f1e8c5297"></td>
+      <td width="50%"><img style="width:100%" src="https://github.com/user-attachments/assets/94814bb3-8d0b-448e-beab-91db6a157e91"></td>
     </tr>
     <tr>
       <td align="center">Stock</td>
