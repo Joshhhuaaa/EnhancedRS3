@@ -7,7 +7,7 @@
 #define APP_FILENAME    APP_NAME ".asi"
 
 #define VERSION_MAJOR    1
-#define VERSION_MINOR    4
+#define VERSION_MINOR    5
 #define VERSION_REVISION ""
 
 #define STRINGIFY_(x)   #x
