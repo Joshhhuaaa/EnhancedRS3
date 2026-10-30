@@ -48,6 +48,38 @@ Field of view is calculated automatically based on the aspect ratio, widening th
   </table>
 </div>
 
+### Font Scaling
+The game's text uses small bitmap fonts, which turn blurry when stretched to fit higher resolutions. Enhanced RS3 draws text from the game's larger font sizes instead, keeping the HUD, menus, and console sharp at any resolution. The console also uses the HUD's font in place of the stock one, which only comes in a single small size.
+
+<div align="center">
+  <table>
+    <tr>
+      <td width="50%"><img style="width:100%" src="https://github.com/user-attachments/assets/27edcaa4-4518-40cf-96a6-aaa1bec82f47"></td>
+      <td width="50%"><img style="width:100%" src="https://github.com/user-attachments/assets/ce8db653-5583-4671-a9e6-d2fb3513a542"></td>
+    </tr>
+    <tr>
+      <td align="center">Stock</td>
+      <td align="center">Enhanced</td>
+    </tr>
+  </table>
+</div>
+
+### HUD Artifacting
+At resolutions above 640x480, HUD and menu elements show thin dark lines along their edges, caused by neighboring parts of their texture bleeding in as they scale up. Enhanced RS3 keeps these edges clean at any resolution.
+
+<div align="center">
+  <table>
+    <tr>
+      <td width="50%"><img style="width:100%" src="https://github.com/user-attachments/assets/9a3c3c55-5159-4c54-843b-0c4340dc536d"></td>
+      <td width="50%"><img style="width:100%" src="https://github.com/user-attachments/assets/e726446a-09dd-4c1b-b1b5-549b899f4f9a"></td>
+    </tr>
+    <tr>
+      <td align="center">Stock</td>
+      <td align="center">Enhanced</td>
+    </tr>
+  </table>
+</div>
+
 ### Raw Input
 Mouse input accurately reads data at high polling rates, eliminating the need to cap the mouse at 125 Hz. Adds support for Mouse 4 and 5 side buttons.
 
