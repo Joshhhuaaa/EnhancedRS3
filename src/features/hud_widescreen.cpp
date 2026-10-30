@@ -88,6 +88,7 @@ namespace
     constexpr uintptr_t EngineDrawTo     = 0xae6ea;
     constexpr uintptr_t ProgressFrom     = 0xa1d60;
     constexpr uintptr_t ProgressTo       = 0xa292d;
+    constexpr uintptr_t GlyphTile        = 0x8b07c;
     constexpr uintptr_t TextSizeResult = 0x8bba0;
 
     // UFont::Pages, and the glyph rects each page holds
@@ -190,6 +191,7 @@ namespace
     uintptr_t engineBase = 0;
 
     void (__fastcall* drawTilePrimitive)(void*, void*, float, float, float, float, float, float, float, float, float, void*, uint32_t) = nullptr;
+    void (__fastcall* drawTileRotatedPrimitive)(void*, void*, float, float, float, float, float, float, float, float, float, void*, uint32_t, float) = nullptr;
 
     void* (__cdecl* staticFindObject)(void*, void*, const wchar_t*, int) = nullptr;
     void* (__cdecl* fontClass)() = nullptr;
@@ -202,6 +204,8 @@ namespace
     // FCanvasUtil, one per font page
     alignas(16) uint8_t utils[8][0xca8] = {};
     bool sharpText = false;
+    bool glyphText = false;
+    bool splitting = false;
 
     struct TArray   { uint8_t* Data; int Num; int Max; };
     struct FontSize { void* font; int height; };
@@ -526,8 +530,93 @@ namespace
         ctx.eax = static_cast<uintptr_t>(static_cast<int32_t>(clip - (MessageLeft - std::floor(MessageLeft / scale)) * scale));
     }
 
+    struct TileSpan { float p1, p2, t1, t2; };
+
+    // Clamp edge texels to prevent bilinear sampling from bleeding into neighboring tiles
+    int SplitAxis(float p1, float p2, float t1, float t2, TileSpan* out)
+    {
+        auto extent = p2 - p1;
+        auto span = t2 - t1;
+
+        if (std::fabs(extent) <= std::fabs(span) * 1.01f)
+        {
+            out[0] = { p1, p2, t1, t2 };
+            return 1;
+        }
+
+        auto half = std::copysign(0.5f, span);
+
+        if (std::fabs(span) <= 1.0f)
+        {
+            out[0] = { p1, p2, (t1 + t2) * 0.5f, (t1 + t2) * 0.5f };
+            return 1;
+        }
+
+        // Align split edges to avoid inconsistent truncation in DrawTile
+        auto strip = std::copysign(std::ceil(0.5f * std::fabs(extent / span) - 0.5f), extent);
+
+        if (2.0f * std::fabs(strip) >= std::fabs(extent))
+        {
+            out[0] = { p1, p2, t1 + half, t2 - half };
+            return 1;
+        }
+
+        auto inner = span * (strip / extent);
+        out[0] = { p1, p1 + strip, t1 + half, t1 + half };
+        out[1] = { p1 + strip, p2 - strip, t1 + inner, t2 - inner };
+        out[2] = { p2 - strip, p2, t2 - half, t2 - half };
+        return 3;
+    }
+
+    // Prevent bilinear bleeding between atlas tiles above 640x480, which causes dark edges on HUD and menu elements
+    void ClampTileEdges(void* util, float* arg, bool rotated)
+    {
+        auto material = reinterpret_cast<void**>(arg)[9];
+        auto color = reinterpret_cast<uint32_t*>(arg)[10];
+
+        if (!material)
+            return;
+
+        TileSpan xs[3], ys[3];
+        auto nx = SplitAxis(arg[0], arg[2], arg[4], arg[6], xs);
+        auto ny = SplitAxis(arg[1], arg[3], arg[5], arg[7], ys);
+
+        if (nx == 1 && ny == 1)
+        {
+            arg[4] = xs[0].t1;
+            arg[6] = xs[0].t2;
+            arg[5] = ys[0].t1;
+            arg[7] = ys[0].t2;
+            return;
+        }
+
+        splitting = true;
+
+        for (int j = 0; j < ny; j++)
+        {
+            for (int i = 0; i < nx; i++)
+            {
+                if (rotated)
+                    drawTileRotatedPrimitive(util, nullptr, xs[i].p1, ys[j].p1, xs[i].p2, ys[j].p2,
+                                             xs[i].t1, ys[j].t1, xs[i].t2, ys[j].t2, arg[8], material, color, 0.0f);
+                else
+                    drawTilePrimitive(util, nullptr, xs[i].p1, ys[j].p1, xs[i].p2, ys[j].p2,
+                                      xs[i].t1, ys[j].t1, xs[i].t2, ys[j].t2, arg[8], material, color);
+            }
+        }
+
+        splitting = false;
+
+        arg[2] = arg[0];
+        arg[3] = arg[1];
+    }
+
     void DrawTile(SafetyHookContext& ctx)
     {
+        // A piece of a split tile, already corrected
+        if (splitting)
+            return;
+
         auto ret = *reinterpret_cast<uintptr_t*>(ctx.esp);
         auto arg = reinterpret_cast<float*>(ctx.esp + 4);
         auto rva = ret - engineBase;
@@ -537,11 +626,13 @@ namespace
         for (auto mask : DeviceMask)
             device = device || rva == mask;
 
+        auto overlay = device || rva == ScopeMask || rva == ScopeAdd || rva == ThermalMask || rva == ThermalAdd;
+
         if (rose)
             Rose(arg);
         else if (Gated(ret))
             Correct(arg, AnchorFor(ret));
-        else if (device || rva == ScopeMask || rva == ScopeAdd || rva == ThermalMask || rva == ThermalAdd)
+        else if (overlay)
         {
             auto width = arg[2];
             auto height = arg[3];
@@ -568,10 +659,17 @@ namespace
             if (device || rva == ScopeMask || rva == ThermalMask)
                 FillOutside(reinterpret_cast<void*>(ctx.ecx), arg, width, height);
         }
+
+        // Glyphs belong to the font path, and NativeMenu still moves the loading screen's tiles after this hook
+        if (!overlay && !glyphText && rva != GlyphTile && (rva < ProgressFrom || rva >= ProgressTo))
+            ClampTileEdges(reinterpret_cast<void*>(ctx.ecx), arg, false);
     }
 
     void DrawTileRotated(SafetyHookContext& ctx)
     {
+        if (splitting)
+            return;
+
         auto ret = *reinterpret_cast<uintptr_t*>(ctx.esp);
         auto arg = reinterpret_cast<float*>(ctx.esp + 4);
 
@@ -593,6 +691,10 @@ namespace
             Rose(arg);
         else if (Gated(ret))
             Correct(arg, World);
+
+        // Pieces of a turned tile would each turn about their own center
+        if (arg[11] == 0.0f)
+            ClampTileEdges(reinterpret_cast<void*>(ctx.ecx), arg, true);
     }
 
     // Waypoint coordinates are projected pixels; undo the canvas Y scale before drawing
@@ -955,6 +1057,8 @@ namespace
 
         auto pen = 0;
 
+        glyphText = true;
+
         for (auto c = text; *c; c++)
         {
             auto page = 0;
@@ -996,6 +1100,8 @@ namespace
 
             pen += i3 ? i3 : static_cast<int>(from[2] + at(SpaceX));
         }
+
+        glyphText = false;
 
         for (int i = 0; i < pages->Num; i++)
             destroyCanvasUtil(utils[i], nullptr);
@@ -1315,6 +1421,7 @@ FEATURE(R6Game, WidescreenHUD)
 
     engineBase = reinterpret_cast<uintptr_t>(engine);
     drawTilePrimitive = reinterpret_cast<decltype(drawTilePrimitive)>(drawTile);
+    drawTileRotatedPrimitive = reinterpret_cast<decltype(drawTileRotatedPrimitive)>(drawTileRotated);
 
     auto core = GetModuleHandleW(L"Core");
     staticFindObject = reinterpret_cast<decltype(staticFindObject)>(GetProcAddress(core, "?StaticFindObject@UObject@@SAPAV1@PAVUClass@@PAV1@PBGH@Z"));
