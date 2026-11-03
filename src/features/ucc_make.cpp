@@ -23,3 +23,20 @@ UCC_FEATURE(Editor, MakeAllPackages)
     injector::WriteMemory<uint8_t>(baseGate.get_first(3), 0xEB, true);
     spdlog::info("MakeAllPackages: ucc make builds every EditPackages entry, Core through UnrealEd");
 }
+
+UCC_FEATURE(Editor, MakeExpansionMods)
+{
+    // MOD= skips its whole branch (mod paths, the mod's [Packages] list) for the two official expansions by name
+    auto editor = GetModuleHandleW(L"Editor");
+    auto modGate = FindModulePattern(editor, { "68 ? ? ? ? 8D 4D B8 FF 15 ? ? ? ? 85 C0 0F 84 D7 02 00 00 68 ? ? ? ? 8D 4D B8 FF 15 ? ? ? ? 85 C0 0F 84 C1 02 00 00" });
+
+    if (modGate.empty())
+    {
+        spdlog::error("MakeExpansionMods: AthenaSword / IronWrath check not found in UMakeCommandlet::Main");
+        return;
+    }
+
+    injector::MakeNOP(modGate.get_first(16), 6, true);
+    injector::MakeNOP(modGate.get_first(38), 6, true);
+    spdlog::info("MakeExpansionMods: ucc make MOD=AthenaSword / MOD=IronWrath builds the expansion packages");
+}
